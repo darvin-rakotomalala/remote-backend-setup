@@ -44,6 +44,11 @@ variable "github_org" {
   type        = string
 }
 
+variable "github_repo" {
+  description = "GitHub repository"
+  type        = string
+}
+
 variable "email_subscriptions" {
   description = "A list of email addresses to subscribe to the SNS topic"
   type        = list(string)

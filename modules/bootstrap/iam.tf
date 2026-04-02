@@ -1,8 +1,15 @@
 #######################################################
 # IAM role for Terraform execution (used in CI/CD)
 #######################################################
+
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
 resource "aws_iam_role" "terraform_execution" {
-  name = "${var.project_name}-terraform-execution-${var.environment}"
+  name = "${var.project_name}-github-actions-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -18,10 +25,7 @@ resource "aws_iam_role" "terraform_execution" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            # Restrict OIDC trust to specific branches if needed.
-            # Allow any branch in the repository
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/*"
-            # "token.actions.githubusercontent.com:sub": "repo:your-username/aws-github-oidc:*"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:*"
           }
         }
       }
@@ -33,7 +37,7 @@ resource "aws_iam_role" "terraform_execution" {
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-github-actions-oidc"
-    Type    = "oidc-Authentication"
+    Type    = "github-actions-role"
     Purpose = "oidc-provider-deployments"
   })
 }
@@ -260,7 +264,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_audit_logs" {
         Resource = "arn:aws:s3:::${aws_s3_bucket.cloudtrail_logs.bucket}/AWSLogs/${var.current_account_id}/*"
         Condition = {
           StringEquals = {
-            "s3:x-amz-acl" = "bucket-owner-full-control"
+            "s3:x-amz-acl"  = "bucket-owner-full-control"
             "aws:SourceArn" = "arn:aws:cloudtrail:${var.current_region}:${var.current_account_id}:trail/${var.project_name}-terraform-state-audit-${var.environment}"
           }
         }

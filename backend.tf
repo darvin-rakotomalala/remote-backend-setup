@@ -1,21 +1,20 @@
 ###############################################
 # Backend configuration
 ###############################################
-/*
+
 terraform {
   backend "s3" {
-    bucket = aws_s3_bucket.terraform_state.id
-    key    = "${var.environment}/infrastructure/terraform.tfstate"
-    region = var.primary_region
+    bucket = "ce-terraform-state-dev-583524027596"
+    key    = "dev/infrastructure/terraform.tfstate"
+    region = "us-east-1"
     # Encryption
     encrypt    = true # Encrypt state at rest
-    kms_key_id = aws_kms_key.terraform_state.arn
+    kms_key_id = "f0d07a59-3482-45cf-afab-0c656b89e24b"
     # State locking
-    dynamodb_table = aws_dynamodb_table.terraform_locks.name
+    dynamodb_table = "ce-terraform-locks-dev"
     # Lock acquisition timeout
     # Default: 0 (wait indefinitely)
     # Recommended: 5-10 minutes
     max_retries = 10
   }
 }
-*/

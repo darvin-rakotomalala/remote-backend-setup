@@ -3,7 +3,7 @@ output "state_bucket_name" {
 }
 
 output "s3_bucket_arn" {
-  value = module.bootstrap.state_bucket_name
+  value = module.bootstrap.s3_bucket_arn
 }
 
 output "dynamodb_table_name" {
@@ -12,6 +12,10 @@ output "dynamodb_table_name" {
 
 output "kms_key_id" {
   value = module.bootstrap.kms_key_id
+}
+
+output "kms_key_arn" {
+  value = module.bootstrap.kms_key_arn
 }
 
 output "terraform_execution_role_arn" {

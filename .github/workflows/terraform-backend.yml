@@ -44,15 +44,15 @@ jobs:
     # A list of steps that execute in order.
     ## (Optional) Continue only if security checks pass
     steps:
-      - name: Checkout the repository to the runner
-        uses: actions/checkout@v6
-      
-        # Authenticate to AWS via OIDC
+      # Authenticate to AWS via OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v5.1.1
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Checkout the repository to the runner
+        uses: actions/checkout@v6
 
       - name: Verify AWS Identity
         run: |

@@ -46,6 +46,11 @@ variable "github_org" {
   type        = string
 }
 
+variable "github_repo" {
+  description = "GitHub repository"
+  type        = string
+}
+
 variable "enable_versioning" {
   description = "Enable S3 versioning for state file history"
   type        = bool

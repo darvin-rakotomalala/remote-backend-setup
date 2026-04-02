@@ -6,4 +6,5 @@ team_name           = "training"
 cost_center         = "engineering"
 compliance          = "internal"
 github_org          = "darvin-rakotomalala"
+github_repo          = "remote-backend-setup"
 email_subscriptions = ["darvintojo@gmail.com"]
