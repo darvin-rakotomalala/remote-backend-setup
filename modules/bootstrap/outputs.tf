@@ -21,6 +21,7 @@ output "kms_key_id" {
 output "terraform_execution_role_arn" {
   description = "IAM role ARN for Terraform execution"
   value       = aws_iam_role.terraform_execution.arn
+  sensitive   = true
 }
 
 output "terraform_execution_role_name" {

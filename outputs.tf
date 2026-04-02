@@ -15,7 +15,8 @@ output "kms_key_id" {
 }
 
 output "terraform_execution_role_arn" {
-  value = module.bootstrap.terraform_execution_role_arn
+  value     = module.bootstrap.terraform_execution_role_arn
+  sensitive = true
 }
 
 output "terraform_execution_role_name" {
