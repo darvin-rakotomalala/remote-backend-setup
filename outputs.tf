@@ -14,10 +14,6 @@ output "kms_key_id" {
   value = module.bootstrap.kms_key_id
 }
 
-output "kms_key_arn" {
-  value = module.bootstrap.kms_key_arn
-}
-
 output "terraform_execution_role_arn" {
   value = module.bootstrap.terraform_execution_role_arn
 }

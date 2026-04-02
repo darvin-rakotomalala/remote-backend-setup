@@ -18,11 +18,6 @@ output "kms_key_id" {
   value       = aws_kms_key.terraform_state.id
 }
 
-output "kms_key_arn" {
-  description = "KMS key ARN for state encryption"
-  value       = aws_kms_key.terraform_state.arn
-}
-
 output "terraform_execution_role_arn" {
   description = "IAM role ARN for Terraform execution"
   value       = aws_iam_role.terraform_execution.arn
