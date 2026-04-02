@@ -3,9 +3,9 @@
 # Global DynamoDB table for locking
 #################################################
 resource "aws_dynamodb_table" "terraform_locks" {
-  name                   = "${var.project_name}-terraform-locks-${var.environment}"
-  billing_mode           = "PAY_PER_REQUEST" # On-demand is recommended for global tables
-  hash_key               = "LockID"
+  name         = "${var.project_name}-terraform-locks-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST" # On-demand is recommended for global tables
+  hash_key     = "LockID"
 
   # Enable streams - required for global tables
   stream_enabled   = true

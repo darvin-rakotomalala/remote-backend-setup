@@ -49,9 +49,9 @@ resource "aws_cloudwatch_metric_alarm" "replication_latency" {
   evaluation_periods  = 3
   metric_name         = "ReplicationLatency"
   namespace           = "AWS/DynamoDB"
-  period              = 300  # 5 minutes
+  period              = 300 # 5 minutes
   statistic           = "Average"
-  threshold           = 5000  # 5 seconds
+  threshold           = 5000 # 5 seconds
   alarm_description   = "DynamoDB global table replication latency is above 5 seconds"
 
   dimensions = {

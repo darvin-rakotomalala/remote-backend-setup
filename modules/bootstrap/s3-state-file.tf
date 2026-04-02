@@ -159,7 +159,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 resource "aws_s3_bucket_notification" "bucket-notification" {
   bucket = aws_s3_bucket.terraform_state.id
   topic {
-    topic_arn = aws_sns_topic.s3-event-notification-topic.arn
+    topic_arn     = aws_sns_topic.s3-event-notification-topic.arn
     events        = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"] # You can specify the events you are interested in
     filter_prefix = "${var.environment}/"
     filter_suffix = "terraform.tfstate"
