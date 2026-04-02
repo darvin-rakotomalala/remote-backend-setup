@@ -1,4 +1,4 @@
-## AWS Remote State Management in Terraform
+## AWS Remote State Management using Terraform
 
 This project show how to configure remote state storage in Terraform for team collaboration, state locking, and disaster
 recovery with Terraform.
