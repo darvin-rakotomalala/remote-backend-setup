@@ -1,0 +1,9 @@
+primary_region      = "us-east-1"
+secondary_region    = "us-west-2"
+environment         = "dev"
+project_name        = "ce"
+team_name           = "training"
+cost_center         = "engineering"
+compliance          = "internal"
+github_org          = "darvin-rakotomalala"
+email_subscriptions = ["darvintojo@gmail.com"]
