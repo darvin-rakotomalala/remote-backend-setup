@@ -1,10 +1,10 @@
 ###############################################
 # Backend configuration
 ###############################################
-/*
+
 terraform {
   backend "s3" {
-    bucket = "ce-terraform-state-dev-current_account_id"
+    bucket = "ce-terraform-state-dev-583524027596"
     key    = "dev/infrastructure/terraform.tfstate"
     region = "us-east-1"
     # Encryption
@@ -18,4 +18,3 @@ terraform {
     max_retries = 10
   }
 }
-*/
