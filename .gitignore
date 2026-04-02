@@ -44,3 +44,8 @@ terraform.rc
 # Directories
 .terraform/
 .vagrant/ # Optional: if using Vagrant with Terraform
+
+**/.idea/*
+.terraform.lock.hcl
+outputs.json
+tfplan
