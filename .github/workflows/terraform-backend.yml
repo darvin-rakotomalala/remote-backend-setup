@@ -79,52 +79,60 @@ jobs:
       - name: Terraform Plan
         id: plan
         if: github.event_name == 'push'
-        run: |
-          terraform plan -var-file="environments/dev/dev-terraform.tfvars" -no-color -out=tfplan 2>&1 | tee plan_output.txt
-          echo "exitcode=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        run: terraform plan -var-file="environments/dev/dev-terraform.tfvars" -no-color -out=tfplan
         continue-on-error: true
 
         # Post plan as PR comment
       - name: Post Plan to PR
         uses: actions/github-script@v7
-        if: github.event_name == 'push'
         env:
-          PLAN: ${{ steps.plan.outputs.stdout }}
+          PLAN_OUTPUT: ${{ steps.plan.outputs.stdout }}
         with:
           script: |
-            const fs = require('fs');
-            const planOutput = fs.readFileSync('terraform/plan_output.txt', 'utf8');
-            
-            // Truncate if too long (GitHub comment limit is 65536 chars)
-            const maxLen = 60000;
-            const truncated = planOutput.length > maxLen
-              ? planOutput.slice(0, maxLen) + '\n\n... output truncated ...'
-              : planOutput;
-            
-            const body = `## Terraform Plan 📋
-            
-            <details><summary>Show Plan</summary>
-            
-            \`\`\`hcl
-            ${truncated}
-            \`\`\`
-            
-            </details>
-            
-            **Plan exit code:** \`${{ steps.plan.outputs.exitcode }}\`
-            **Workflow:** [${context.workflow}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-            
-            // Find existing bot comment to update (sticky comment)
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('Terraform Plan 📋')
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('<!-- terraform-plan-comment -->')
             );
-            
+
+            const initOutcome   = '${{ steps.init.outcome }}';
+            const validateOutcome = '${{ steps.validate.outcome }}';
+            const planOutcome   = '${{ steps.plan.outcome }}';
+
+            const statusIcon = (outcome) =>
+              outcome === 'success' ? '✅' : outcome === 'failure' ? '❌' : '⚠️';
+
+            const planOutput = process.env.PLAN_OUTPUT || '(no output)';
+            const truncated  = planOutput.length > 60000
+              ? planOutput.slice(0, 60000) + '\n\n... output truncated'
+              : planOutput;
+
+            const body = `<!-- terraform-plan-comment -->
+            ## Terraform Plan
+
+            | Step | Result |
+            |------|--------|
+            | Init | ${statusIcon(initOutcome)} \`${initOutcome}\` |
+            | Validate | ${statusIcon(validateOutcome)} \`${validateOutcome}\` |
+            | Plan | ${statusIcon(planOutcome)} \`${planOutcome}\` |
+
+            <details>
+            <summary><strong>Show Plan Output</strong></summary>
+
+            \`\`\`hcl
+            ${truncated}
+            \`\`\`
+            </details>
+
+            > [!NOTE]
+            > Plan generated for commit \`${{ github.event.pull_request.head.sha }}\` — pushed by @${{ github.actor }}.
+            `;
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
