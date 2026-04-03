@@ -1,6 +1,6 @@
-## AWS Remote State Management using Terraform
+## AWS Remote Terraform State Management using Terraform
 
-This project show how to configure remote state storage in Terraform for team collaboration, state locking, and disaster
+This project show how to configure production-grade remote state storage in Terraform for team collaboration, state locking, and disaster
 recovery with Terraform.
 
 **Terraform state** is the source of truth for your infrastructure. By default, it lives in a local
@@ -22,6 +22,10 @@ Remote state provides:
 - **Locking**: Prevent concurrent modifications
 - **Versioning**: Roll back to previous states
 - **Encryption**: Protect sensitive data at rest
+
+### Architecture Overview
+
+![terraform-state.jpg](terraform-state.jpg)
 
 ### S3 Backend Configuration
 
