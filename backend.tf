@@ -1,7 +1,7 @@
 ###############################################
 # Backend configuration
 ###############################################
-/*
+
 terraform {
   backend "s3" {
     bucket = "ce-dev-terraform-state-69127"
@@ -18,4 +18,3 @@ terraform {
     max_retries = 10
   }
 }
-*/
