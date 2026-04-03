@@ -2,7 +2,7 @@
 # SNS Topic for notifications/alerts
 ####################################################
 resource "aws_sns_topic" "terraform_state_alerts" {
-  name = "${var.project_name}-terraform-state-alerts-${var.environment}"
+  name = "${var.naming_prefix}-terraform-state-alerts"
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-terraform-state-alerts"
@@ -37,7 +37,7 @@ resource "aws_sns_topic_subscription" "state_backup_email" {
 # Create an SNS topic with a email subscription
 ####################################################
 resource "aws_sns_topic" "s3-event-notification-topic" {
-  name   = "${var.project_name}-s3-event-notification-topic-${var.environment}"
+  name   = "${var.naming_prefix}-s3-event-notification-topic"
   policy = <<POLICY
     {
       "Version":"2012-10-17",
@@ -45,7 +45,7 @@ resource "aws_sns_topic" "s3-event-notification-topic" {
         "Effect": "Allow",
         "Principal": { "Service": "s3.amazonaws.com" },
         "Action": "SNS:Publish",
-        "Resource": "arn:aws:sns:${var.current_region}:${var.current_account_id}:${var.project_name}-s3-event-notification-topic-${var.environment}",
+        "Resource": "arn:aws:sns:${var.current_region}:${var.current_account_id}:${var.naming_prefix}-s3-event-notification-topic",
         "Condition":{
             "StringEquals":{"aws:SourceAccount":"${var.current_account_id}"},
             "ArnLike":{"aws:SourceArn":"${aws_s3_bucket.terraform_state.arn}"}

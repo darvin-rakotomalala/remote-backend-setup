@@ -79,11 +79,11 @@ jobs:
       - name: Terraform Plan
         id: plan
         if: github.event_name == 'push'
-        run: terraform plan -var-file="environments/dev/dev-terraform.tfvars" -no-color -out=tfplan
+        run: terraform plan -var-file="dev-terraform.tfvars" -no-color -out=tfplan
         continue-on-error: true
 
       - name: Terraform Apply
         id: apply
         # Apply only on push events, not on PRs
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -var-file="environments/dev/dev-terraform.tfvars" -auto-approve tfplan
+        run: terraform apply -var-file="dev-terraform.tfvars" -auto-approve tfplan

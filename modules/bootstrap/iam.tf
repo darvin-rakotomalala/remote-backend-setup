@@ -9,7 +9,7 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 resource "aws_iam_role" "terraform_execution" {
-  name = "${var.project_name}-github-actions-role-${var.environment}"
+  name = "${var.naming_prefix}-github-actions-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -55,7 +55,7 @@ resource "aws_iam_role_policy_attachment" "terraform_execution_admin" {
 /*
 # Full access (for CI/CD and infrastructure team)
 resource "aws_iam_policy" "terraform_state_full" {
-  name        = "TerraformStateFullAccess"
+  name        = "${var.naming_prefix}-TerraformStateFullAccess"
   description = "Full access to Terraform state"
 
   policy = jsonencode({
@@ -193,7 +193,7 @@ resource "aws_s3_bucket_policy" "terraform_state" {
 # IAM Role for CloudTrail
 #######################################################
 resource "aws_iam_role" "cloudtrail_logs" {
-  name = "${var.project_name}-cloudtrail-logs-role-${var.environment}"
+  name = "${var.naming_prefix}-cloudtrail-logs-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -214,7 +214,7 @@ resource "aws_iam_role" "cloudtrail_logs" {
 }
 
 resource "aws_iam_role_policy" "cloudtrail_logs_policy" {
-  name = "${var.project_name}-cloudtrail-logs-policy-${var.environment}"
+  name = "${var.naming_prefix}-cloudtrail-logs-policy"
   role = aws_iam_role.cloudtrail_logs.id
 
   policy = jsonencode({
@@ -277,7 +277,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_audit_logs" {
 # IAM Role for Replication
 #######################################################
 resource "aws_iam_role" "replication" {
-  name = "${var.project_name}-s3-replication-role-${var.environment}"
+  name = "${var.naming_prefix}-s3-replication-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -298,7 +298,7 @@ resource "aws_iam_role" "replication" {
 }
 
 resource "aws_iam_role_policy" "replication" {
-  name = "${var.project_name}-s3-replication-policy-${var.environment}"
+  name = "${var.naming_prefix}-s3-replication-policy"
   role = aws_iam_role.replication.id
 
   policy = jsonencode({

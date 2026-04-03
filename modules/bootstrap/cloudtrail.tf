@@ -4,7 +4,7 @@
 
 # S3 bucket for audit logs with its own retention policy
 resource "aws_s3_bucket" "cloudtrail_logs" {
-  bucket        = "${var.project_name}-terraform-audit-logs-${var.environment}-${var.current_account_id}"
+  bucket        = "${var.naming_prefix}-terraform-audit-logs"
   force_destroy = true # for Non-Production Buckets
   # force_destroy = var.environment != "production"
 
@@ -82,7 +82,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "audit_logs" {
 # Centralize Audit Logs - Send CloudTrail events to CloudWatch Logs for centralized querying
 # Create a CloudTrail trail specifically for Terraform state auditing
 resource "aws_cloudtrail" "cloudtrail_logs" {
-  name                          = "${var.project_name}-terraform-state-audit-${var.environment}"
+  name                          = "${var.naming_prefix}-terraform-state-audit"
   s3_bucket_name                = aws_s3_bucket.cloudtrail_logs.id
   kms_key_id                    = aws_kms_key.cloudtrail.arn
   enable_log_file_validation    = true # relates digest files so you can verify log integrity

@@ -11,7 +11,7 @@ provider "aws" {
 
 resource "aws_s3_bucket" "state_backup_replica" {
   provider      = aws.us_west
-  bucket        = "${var.project_name}-terraform-state-data-replica-${var.environment}-${var.current_account_id}"
+  bucket        = "${var.naming_prefix}-terraform-state-data-replica-69127"
   force_destroy = true # set false for prod
   # Prevent accidental deletion
   lifecycle {

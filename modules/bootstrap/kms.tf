@@ -44,7 +44,7 @@ resource "aws_kms_key" "terraform_state" {
 }
 
 resource "aws_kms_alias" "terraform_state" {
-  name          = "alias/${var.project_name}-terraform-state-${var.environment}"
+  name          = "alias/${var.naming_prefix}-terraform-state-key"
   target_key_id = aws_kms_key.terraform_state.key_id
 }
 
@@ -81,7 +81,7 @@ resource "aws_kms_key" "replication_state_key" {
 
 resource "aws_kms_alias" "replication_state_key" {
   provider      = aws.us_west
-  name          = "alias/${var.project_name}-replication-state-key-${var.environment}"
+  name          = "alias/${var.naming_prefix}-replication-state-key"
   target_key_id = aws_kms_key.replication_state_key.key_id
 }
 
@@ -150,7 +150,7 @@ resource "aws_kms_key" "cloudtrail" {
 }
 
 resource "aws_kms_alias" "cloudtrail" {
-  name          = "alias/${var.project_name}-cloudtrail-${var.environment}"
+  name          = "alias/${var.naming_prefix}-cloudtrail-encryption-key"
   target_key_id = aws_kms_key.cloudtrail.key_id
 }
 
@@ -181,6 +181,6 @@ resource "aws_kms_key" "dynamodb_replica" {
 
 resource "aws_kms_alias" "dynamodb_replica" {
   provider      = aws.us_west
-  name          = "alias/${var.project_name}-dynamodb-replica-${var.environment}"
+  name          = "alias/${var.naming_prefix}-dynamodb-replica-encryption-key"
   target_key_id = aws_kms_key.dynamodb_replica.key_id
 }

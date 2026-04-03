@@ -4,7 +4,7 @@
 
 # Send CloudTrail events to CloudWatch Logs for real-time monitoring and alerting
 resource "aws_cloudwatch_log_group" "terraform_state_log_group" {
-  name              = "/aws/cloudtrail/${var.project_name}-terraform-state-file-trail-${var.environment}"
+  name              = "/aws/cloudtrail/${var.naming_prefix}-terraform-state-file-trail"
   retention_in_days = 7 # adjust based on compliance needs
   # retention_in_days = 365
 
@@ -17,7 +17,7 @@ resource "aws_cloudwatch_log_group" "terraform_state_log_group" {
 
 # Monitor Lock Table - CloudWatch Metric Alarm
 resource "aws_cloudwatch_metric_alarm" "long_held_lock_alarm" {
-  alarm_name          = "${var.project_name}-LongHeldTerraformLockAlarm-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-LongHeldTerraformLockAlarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 12 # 1 hour (12 × 5 minutes)
   metric_name         = "ItemCount"
@@ -44,7 +44,7 @@ resource "aws_cloudwatch_metric_alarm" "long_held_lock_alarm" {
 # Monitoring Global Tables
 # Alarm for high replication latency
 resource "aws_cloudwatch_metric_alarm" "replication_latency" {
-  alarm_name          = "${var.project_name}-dynamodb-table-replication-latency-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-dynamodb-table-replication-latency"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 3
   metric_name         = "ReplicationLatency"
@@ -70,7 +70,7 @@ resource "aws_cloudwatch_metric_alarm" "replication_latency" {
 
 # Alert when unusual Terraform state access detected
 resource "aws_cloudwatch_metric_alarm" "excessive_state_access" {
-  alarm_name          = "${var.project_name}-excessive-terraform-state-access-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-excessive-terraform-state-access"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "TerraformStateAccess"
@@ -90,7 +90,7 @@ resource "aws_cloudwatch_metric_alarm" "excessive_state_access" {
 
 # CloudWatch alarm for state file modifications
 resource "aws_cloudwatch_metric_alarm" "state_modification" {
-  alarm_name          = "${var.project_name}-terraform-state-modified-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-terraform-state-modified"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "PutObject"
@@ -116,7 +116,7 @@ resource "aws_cloudwatch_metric_alarm" "state_modification" {
 
 # Alert on state file access
 resource "aws_cloudwatch_log_metric_filter" "state_access" {
-  name           = "${var.project_name}-terraform-state-access-${var.environment}"
+  name           = "${var.naming_prefix}-terraform-state-access"
   pattern        = "{ $.requestParameters.bucketName = \"${aws_s3_bucket.terraform_state.id}\" }"
   log_group_name = aws_cloudwatch_log_group.terraform_state_log_group.name
 
@@ -131,7 +131,7 @@ resource "aws_cloudwatch_log_metric_filter" "state_access" {
 
 # Alert when more than 5 access over 5 minute period
 resource "aws_cloudwatch_metric_alarm" "state_access" {
-  alarm_name          = "${var.project_name}-terraform-state-file-access-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-terraform-state-file-access"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   period              = 300 # 5 minutes
   evaluation_periods  = 1
@@ -152,7 +152,7 @@ resource "aws_cloudwatch_metric_alarm" "state_access" {
 
 # Alert when state backups are stale
 resource "aws_cloudwatch_metric_alarm" "state_backup_stale" {
-  alarm_name          = "${var.project_name}-terraform-state-backup-stale-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-terraform-state-backup-stale"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 1
   metric_name         = "NumberOfObjects"
@@ -178,7 +178,7 @@ resource "aws_cloudwatch_metric_alarm" "state_backup_stale" {
 
 # CloudWatch alarm for replication lag
 resource "aws_cloudwatch_metric_alarm" "replication_lag" {
-  alarm_name          = "${var.project_name}-terraform-state-replication-lag-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-terraform-state-replication-lag"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "ReplicationLatency"
@@ -207,7 +207,7 @@ resource "aws_cloudwatch_metric_alarm" "replication_lag" {
 # CloudTrail captures all OIDC authentication attempts
 ##########################################################
 resource "aws_cloudwatch_log_group" "oidc_events" {
-  name              = "/aws/cloudtrail/${var.project_name}-github-oidc-${var.environment}"
+  name              = "/aws/cloudtrail/${var.naming_prefix}-github-oidc"
   retention_in_days = 7 # adjust based on compliance needs
   # retention_in_days = 90
 
@@ -220,7 +220,7 @@ resource "aws_cloudwatch_log_group" "oidc_events" {
 
 # CloudWatch metric filter for failed authentication attempts
 resource "aws_cloudwatch_log_metric_filter" "oidc_failures" {
-  name           = "${var.project_name}-github-oidc-auth-failures-${var.environment}"
+  name           = "${var.naming_prefix}-github-oidc-auth-failures"
   pattern        = "{ $.eventName = AssumeRoleWithWebIdentity && $.errorCode = * }"
   log_group_name = aws_cloudwatch_log_group.oidc_events.name
 
@@ -233,7 +233,7 @@ resource "aws_cloudwatch_log_metric_filter" "oidc_failures" {
 
 # Alarm on authentication failures
 resource "aws_cloudwatch_metric_alarm" "oidc_failures_alarm" {
-  alarm_name          = "${var.project_name}-github-oidc-auth-failures-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-github-oidc-auth-failures"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "OIDCAuthFailures"
@@ -257,7 +257,7 @@ resource "aws_cloudwatch_metric_alarm" "oidc_failures_alarm" {
 
 # Metric filter for unauthorized API calls
 resource "aws_cloudwatch_log_metric_filter" "unauthorized_api_calls" {
-  name           = "${var.project_name}-unauthorized-api-calls-${var.environment}"
+  name           = "${var.naming_prefix}-unauthorized-api-calls"
   pattern        = "{ ($.errorCode = \"*UnauthorizedAccess\") || ($.errorCode = \"AccessDenied*\") }"
   log_group_name = aws_cloudwatch_log_group.terraform_state_log_group.name
 
@@ -270,7 +270,7 @@ resource "aws_cloudwatch_log_metric_filter" "unauthorized_api_calls" {
 
 # Alarm for too many unauthorized calls
 resource "aws_cloudwatch_metric_alarm" "unauthorized_api_calls" {
-  alarm_name          = "${var.project_name}-unauthorized-api-calls-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-unauthorized-api-calls"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "UnauthorizedAPICalls"
@@ -290,7 +290,7 @@ resource "aws_cloudwatch_metric_alarm" "unauthorized_api_calls" {
 
 # Metric filter for root account usage
 resource "aws_cloudwatch_log_metric_filter" "root_account_usage" {
-  name           = "${var.project_name}-root-account-usage-${var.environment}"
+  name           = "${var.naming_prefix}-root-account-usage"
   pattern        = "{ $.userIdentity.type = \"Root\" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != \"AwsServiceEvent\" }"
   log_group_name = aws_cloudwatch_log_group.terraform_state_log_group.name
 
@@ -302,7 +302,7 @@ resource "aws_cloudwatch_log_metric_filter" "root_account_usage" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "root_usage" {
-  alarm_name          = "${var.project_name}-root-account-usage-${var.environment}"
+  alarm_name          = "${var.naming_prefix}-root-account-usage"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 1
   metric_name         = "RootAccountUsage"
@@ -319,4 +319,3 @@ resource "aws_cloudwatch_metric_alarm" "root_usage" {
     Purpose = "security"
   })
 }
-

@@ -2,7 +2,7 @@
 # S3 bucket for state files
 #############################################
 resource "aws_s3_bucket" "terraform_state" {
-  bucket        = "${var.project_name}-terraform-state-${var.environment}-${var.current_account_id}"
+  bucket        = "${var.naming_prefix}-terraform-state-69127"
   force_destroy = true # set false for prod
   # Prevent accidental deletion
   lifecycle {
@@ -105,7 +105,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
 
 # Logs bucket
 resource "aws_s3_bucket" "access_logs" {
-  bucket        = "${var.project_name}-terraform-logs-${var.environment}-${var.current_account_id}"
+  bucket        = "${var.naming_prefix}-terraform-logs-69127"
   force_destroy = true # set false for prod
   # Prevent accidental deletion
   lifecycle {
@@ -161,7 +161,7 @@ resource "aws_s3_bucket_notification" "bucket-notification" {
   topic {
     topic_arn     = aws_sns_topic.s3-event-notification-topic.arn
     events        = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"] # You can specify the events you are interested in
-    filter_prefix = "${var.environment}/"
+    filter_prefix = "${var.naming_prefix}/"
     filter_suffix = "terraform.tfstate"
   }
 }
