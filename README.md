@@ -208,7 +208,11 @@ remote-backend-setup/
 - **Step 8 - Configure the Backend (*backend.tf*)**
 
 - **Step 9 - Deployment Workflow**
-  - ```terraform-checkov.yml``` — Automated security scanning framework using Checkov to detect Terraform misconfigurations at both repository and pull request (PR) levels.
+    - ```terraform-checkov.yml``` — Automated security scanning framework using Checkov to detect Terraform
+      misconfigurations at both repository and pull request (PR) levels.
+    - ```terraform-tflint.yml``` — TFLint automatically scans .tf files and reports potential issues. It works by
+      analyzing Terraform code for stylistic errors, security problems, or provider-specific issues before deployment.
+    - 
 
 ### Why State Access Matters
 

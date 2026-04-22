@@ -1,0 +1,75 @@
+name: Terraform Linters (TFLint)
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "*" ]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".tflint.hcl"
+    # paths:
+    # - terraform/**
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".tflint.hcl"
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  id-token: write         # Required for requesting the OIDC JWT
+  contents: read          # Required for actions/checkout
+  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+  actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  pull-requests: write    # Required for plan comments
+  issues: write
+
+env:
+  # verbosity setting for Terraform logs
+  TF_LOG: INFO
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
+  TF_VERSION: ${{ vars.TF_VERSION }}
+  # WORKING_DIR: './terraform'
+
+jobs:
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Show TFLint version
+        run: tflint --version
+
+      - name: Initialize TFLint plugins
+        run: tflint --init
+
+      - name: Run TFLint (recursive)
+        id: tflint
+        # Runs tflint --recursive to lint all Terraform modules in the repo
+        run: tflint --recursive --format=sarif > tflint-results.sarif
+        # run: tflint --recursive --format=compact
+
+      - name: Upload TFLint results as artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: tflint-results
+          path: tflint-results/
+          retention-days: 30
