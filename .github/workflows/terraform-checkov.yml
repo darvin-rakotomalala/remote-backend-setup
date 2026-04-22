@@ -41,7 +41,7 @@ env:
   # WORKING_DIR: './terraform'
 
   # ── Customize these ────────────────────────────────────────────────────────
-  CHECKOV_S3_BUCKET: ${{ vars.CHECKOV_S3_BUCKET }}  # e.g. my-security-reports --[TO DO]
+  CHECKOV_S3_BUCKET: ${{ vars.CHECKOV_S3_BUCKET }}  # e.g. checkov-static-analysis-scan-69127
   CHECKOV_DIRECTORY: "."                            # Directory to scan
   # ───────────────────────────────────────────────────────────────────────────
 
@@ -113,7 +113,7 @@ jobs:
         run: |
           REPORT_DIR="${{ steps.checkov.outputs.report_dir }}"
           TIMESTAMP="${{ steps.checkov.outputs.timestamp }}"
-          S3_PATH="s3://checkov-static-analysis-scan-69127/"
+          S3_PATH="${{ env.CHECKOV_S3_BUCKET }}"
           
           echo "Uploading reports to $S3_PATH"
           aws s3 cp "$REPORT_DIR/" "$S3_PATH" \
