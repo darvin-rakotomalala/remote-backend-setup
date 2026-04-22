@@ -1,4 +1,4 @@
-name: checkov-static-analysis-scan
+name: Checkov Security Scan → S3
 
 # Controls when the workflow will run
 on:
@@ -23,6 +23,14 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+permissions:
+  id-token: write         # Required for requesting the OIDC JWT
+  contents: read          # Required for actions/checkout
+  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+  actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  pull-requests: write    # Required for plan comments
+  issues: write
+
 env:
   # verbosity setting for Terraform logs
   TF_LOG: INFO
@@ -32,17 +40,16 @@ env:
   TF_VERSION: ${{ vars.TF_VERSION }}
   # WORKING_DIR: './terraform'
 
+  # ── Customize these ────────────────────────────────────────────────────────
+  CHECKOV_S3_BUCKET: ${{ vars.CHECKOV_S3_BUCKET }}  # e.g. my-security-reports --[TO DO]
+  CHECKOV_DIRECTORY: "."                            # Directory to scan
+  # ───────────────────────────────────────────────────────────────────────────
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "scan"
   checkov-scan:
-    permissions:
-      id-token: write         # Required for requesting the OIDC JWT
-      contents: read          # Required for actions/checkout
-      security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
-      actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
-      pull-requests: write    # Required for plan comments
-      issues: write
+    name: Run Checkov & Upload to S3
     environment: dev
     # defaults:
     # run:
@@ -52,37 +59,86 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so follow-up steps can access it
+        # ── 1. Checkout code ───────────────────────────────────────────────────
       - name: Checkout Repository
         uses: actions/checkout@v6
 
+        # ── 2. Authenticate to AWS (OIDC — no long-lived keys) ─────────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5.1.1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+        # ── 3. Set up Python & install Checkov ─────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Checkov
+        run: pip install checkov
+
+        # ── 4. Run Checkov ─────────────────────────────────────────────────────
       - name: Run Checkov scan
         id: checkov
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          # directory: ./terraform  # Path to your Terraform files
-          # framework: terraform   # Optional: filters specifically for Terraform
-          # soft_fail: true      # Uncomment to avoid failing the build on errors
-          # This will add both a CLI output to the console and create a results.sarif file
-          output_format: cli,sarif
-          output_file_path: console,checkov_results.sarif
-          # https://github.com/bridgecrewio/checkov/issues/6216
-          skip_check: CKV2_GHA_1
-
-        # Upload results to GitHub Security
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v4
+        # continue-on-error so the upload step always runs even when findings exist
         continue-on-error: true
-        # Results are generated only on a success or failure
-        # this is required since GitHub by default won't run the next step
-        # when the previous one has failed. Security checks that do not pass will 'fail'.
-        # An alternative is to add `continue-on-error: true` to the previous step
-        # Or 'soft_fail: true' to checkov.
-        if: success() || failure()
-        with:
-          sarif_file: checkov_results.sarif
-          category: checkov
-
-      - name: Upload Checkov Results to S3
         run: |
-            aws s3 cp checkov_results.json s3://checkov-static-analysis-scan-69127/
+          TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
+          RUN_ID="${{ github.run_id }}"
+          REPORT_DIR="checkov-reports"
+          mkdir -p "$REPORT_DIR"
+        
+          checkov \
+            --directory "${{ env.CHECKOV_DIRECTORY }}" \
+            --output cli \
+            --output junitxml \
+            --output json \
+            --output-file-path "$REPORT_DIR" \
+            --soft-fail \
+            2>&1 | tee "$REPORT_DIR/checkov.log"
+        
+          # Rename outputs to include timestamp + run-id for easy S3 sorting
+          for f in "$REPORT_DIR"/*; do
+            base=$(basename "$f")
+            mv "$f" "$REPORT_DIR/${TIMESTAMP}_run${RUN_ID}_${base}"
+          done
+        
+          echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+          echo "report_dir=$REPORT_DIR" >> "$GITHUB_OUTPUT"
+
+        # ── 5. Upload reports to S3 ────────────────────────────────────────────
+      - name: Upload Checkov reports to S3
+        run: |
+          REPORT_DIR="${{ steps.checkov.outputs.report_dir }}"
+          TIMESTAMP="${{ steps.checkov.outputs.timestamp }}"
+          S3_PATH="s3://checkov-static-analysis-scan-69127/"
+          
+          echo "Uploading reports to $S3_PATH"
+          aws s3 cp "$REPORT_DIR/" "$S3_PATH" \
+            --recursive \
+            --storage-class STANDARD_IA \
+            --metadata \
+              "git-sha=${{ github.sha }},\
+               git-ref=${{ github.ref_name }},\
+               run-id=${{ github.run_id }},\
+               repository=${{ github.repository }}"
+          
+          echo "✅ Reports uploaded to $S3_PATH"
+
+        # ── 6. Upload artifacts for in-GitHub viewing ──────────────────────────
+      - name: Upload Checkov reports as GitHub artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkov-reports-${{ github.run_id }}
+          path: ${{ steps.checkov.outputs.report_dir }}
+          retention-days: 30
+
+        # ── 7. Fail the job if Checkov found violations ────────────────────────
+      - name: Evaluate Checkov exit code
+        if: steps.checkov.outcome == 'failure'
+        run: |
+          echo "❌ Checkov detected policy violations. Review the uploaded reports."
+          exit 1
