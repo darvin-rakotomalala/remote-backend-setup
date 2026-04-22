@@ -1,0 +1,88 @@
+name: checkov-static-analysis-scan
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "*" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation'
+      - 'Verification'
+    # paths:
+    # - terraform/**
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+    # paths:
+    # - terraform/**
+    # schedule:
+    # - cron: '0 0 * * 0'  # Weekly scan
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  # verbosity setting for Terraform logs
+  TF_LOG: INFO
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
+  TF_VERSION: ${{ vars.TF_VERSION }}
+  # WORKING_DIR: './terraform'
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "scan"
+  checkov-scan:
+    permissions:
+      id-token: write         # Required for requesting the OIDC JWT
+      contents: read          # Required for actions/checkout
+      security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+      actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+      pull-requests: write    # Required for plan comments
+      issues: write
+    environment: dev
+    # defaults:
+    # run:
+    # working-directory: ${{ env.WORKING_DIR }}
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so follow-up steps can access it
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Run Checkov scan
+        id: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          # directory: ./terraform  # Path to your Terraform files
+          # framework: terraform   # Optional: filters specifically for Terraform
+          # soft_fail: true      # Uncomment to avoid failing the build on errors
+          # This will add both a CLI output to the console and create a results.sarif file
+          output_format: cli,sarif
+          output_file_path: console,checkov_results.sarif
+          # https://github.com/bridgecrewio/checkov/issues/6216
+          skip_check: CKV2_GHA_1
+
+        # Upload results to GitHub Security
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
+        # Results are generated only on a success or failure
+        # this is required since GitHub by default won't run the next step
+        # when the previous one has failed. Security checks that do not pass will 'fail'.
+        # An alternative is to add `continue-on-error: true` to the previous step
+        # Or 'soft_fail: true' to checkov.
+        if: success() || failure()
+        with:
+          sarif_file: checkov_results.sarif
+          category: checkov
+
+      - name: Upload Checkov Results to S3
+        run: |
+            aws s3 cp checkov_results.json s3://checkov-static-analysis-scan-69127/

@@ -12,14 +12,3 @@ locals {
   }
   naming_prefix = "${var.project_name}-${var.environment}"
 }
-
-# Data sources
-data "aws_caller_identity" "current" {}
-
-# Get information about the current AWS region
-data "aws_region" "current" {}
-
-# Data sources
-data "aws_availability_zones" "available" {
-  state = "available"
-}

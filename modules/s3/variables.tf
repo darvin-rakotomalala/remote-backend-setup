@@ -1,8 +1,3 @@
-variable "primary_region" {
-  description = "Primary region"
-  type        = string
-}
-
 variable "secondary_region" {
   description = "Secondary region"
   type        = string
@@ -10,11 +5,6 @@ variable "secondary_region" {
 
 variable "environment" {
   description = "Environment name"
-  type        = string
-}
-
-variable "project_name" {
-  description = "Project name"
   type        = string
 }
 
@@ -31,23 +21,8 @@ variable "backup_policy" {
   default     = true
 }
 
-variable "current_region" {
-  description = "Current region name"
-  type        = string
-}
-
 variable "current_account_id" {
   description = "Current account ID"
-  type        = string
-}
-
-variable "github_org" {
-  description = "GitHub organization"
-  type        = string
-}
-
-variable "github_repo" {
-  description = "GitHub repository"
   type        = string
 }
 
@@ -55,11 +30,6 @@ variable "enable_versioning" {
   description = "Enable S3 versioning for state file history"
   type        = bool
   default     = true
-}
-
-variable "email_subscriptions" {
-  description = "A list of email addresses to subscribe to the SNS topic"
-  type        = list(string)
 }
 
 variable "standard_ia" {
@@ -96,4 +66,24 @@ variable "noncurrent_version_expiration" {
   description = "Number of days noncurrent_version_expiration"
   type        = number
   default     = 120
+}
+
+variable "terraform_state_kms_key_arn" {
+  description = "KMS key ID for state encryption ARN"
+  type        = string
+}
+
+variable "sns_s3_event_notification_topic_arn" {
+  description = "SNS s3 event notification topic ARN"
+  type        = string
+}
+
+variable "iam_role_replication_arn" {
+  description = "IAM role for S3 bucket replication ARN"
+  type        = string
+}
+
+variable "replication_state_key_kms_key_arn" {
+  description = "KMS key ID for replication state encryption ARN"
+  type        = string
 }

@@ -1,8 +1,15 @@
 #############################################
 # S3 bucket for state files
 #############################################
+
+resource "random_string" "bucket_suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
+
 resource "aws_s3_bucket" "terraform_state" {
-  bucket        = "${var.naming_prefix}-terraform-state-69127"
+  bucket        = "${var.naming_prefix}-terraform-state-${random_string.bucket_suffix.result}"
   force_destroy = true # set false for prod
   # Prevent accidental deletion
   lifecycle {
@@ -11,8 +18,8 @@ resource "aws_s3_bucket" "terraform_state" {
 
   tags = merge(var.common_tags, {
     Name         = "${var.naming_prefix}-terraform-state"
-    Type         = "terraform-state"
-    Purpose      = "backend"
+    Type         = "backend"
+    Purpose      = "terraform-state"
     BackupPolicy = var.backup_policy
   })
 }
@@ -34,7 +41,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.terraform_state.arn
+      kms_master_key_id = var.terraform_state_kms_key_arn
     }
     bucket_key_enabled = true
   }
@@ -105,7 +112,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
 
 # Logs bucket
 resource "aws_s3_bucket" "access_logs" {
-  bucket        = "${var.naming_prefix}-terraform-logs-69127"
+  bucket        = "${var.naming_prefix}-terraform-logs-${random_string.bucket_suffix.result}"
   force_destroy = true # set false for prod
   # Prevent accidental deletion
   lifecycle {
@@ -114,8 +121,8 @@ resource "aws_s3_bucket" "access_logs" {
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-logs-bucket"
-    Type    = "logs bucket"
-    Purpose = "s3-access-logging"
+    Type    = "logs"
+    Purpose = "s3-bucket-access-logging"
   })
 }
 
@@ -134,7 +141,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.terraform_state.arn
+      kms_master_key_id = var.terraform_state_kms_key_arn
     }
     bucket_key_enabled = true
   }
@@ -153,13 +160,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
   }
 }
 
-####################################################
+#####################################################################
 # S3 Event to SNS Notifications for ObjectCreated and ObjectRemoved
-####################################################
+#####################################################################
 resource "aws_s3_bucket_notification" "bucket-notification" {
   bucket = aws_s3_bucket.terraform_state.id
   topic {
-    topic_arn     = aws_sns_topic.s3-event-notification-topic.arn
+    topic_arn     = var.sns_s3_event_notification_topic_arn
     events        = ["s3:ObjectCreated:*", "s3:ObjectRemoved:*"] # You can specify the events you are interested in
     filter_prefix = "${var.naming_prefix}/"
     filter_suffix = "terraform.tfstate"

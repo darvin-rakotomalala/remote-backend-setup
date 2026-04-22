@@ -1,49 +1,21 @@
-output "state_bucket_name" {
-  value = module.bootstrap.state_bucket_name
-}
-
-output "s3_bucket_arn" {
-  value = module.bootstrap.s3_bucket_arn
-}
-
-output "dynamodb_table_name" {
-  value = module.bootstrap.dynamodb_table_name
-}
-
-output "kms_key_id" {
-  value = module.bootstrap.kms_key_id
-}
-
 output "terraform_execution_role_arn" {
-  value     = module.bootstrap.terraform_execution_role_arn
-  sensitive = true
-}
-
-output "terraform_execution_role_name" {
-  value = module.bootstrap.terraform_execution_role_name
+  description = "Terraform execution role ARN for GitHub Actions"
+  value       = module.iam.iam_role_terraform_execution_arn
+  sensitive   = false
 }
 
 output "backend_config" {
-  value = module.bootstrap.backend_config
+  description = "Backend configuration to use in other projects"
+  value       = <<-EOT
+  terraform {
+    backend "s3" {
+      bucket         = "${module.s3.bucket_terraform_state_id}"
+      key            = "${var.environment}/infrastructure/terraform.tfstate"
+      region         = "${var.primary_region}"
+      encrypt        = true
+      kms_key_id     = "${module.kms.terraform_state_kms_key_id}"
+      dynamodb_table = "${module.dynamodb.dynamodb_table_name}"
+    }
+  }
+  EOT
 }
-
-output "destination_bucket" {
-  value = module.bootstrap.destination_bucket
-}
-/*
-# If you want to encode all outputs into a file, build the object explicitly:
-resource "local_file" "output_file" {
-  content = jsonencode({
-    vpc_id     = module.bootstrap.vpc_id
-    subnet_ids = module.bootstrap.subnet_ids
-    # ... add your actual outputs here
-  })
-  filename = "${path.module}/outputs.json"
-}
-
-# If you're trying to reference a specific output value:
-resource "local_file" "output_file" {
-  content  = jsonencode(module.bootstrap.some_output)
-  filename = "${path.module}/outputs.json"
-}
-*/

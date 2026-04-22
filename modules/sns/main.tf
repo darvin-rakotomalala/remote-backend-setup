@@ -11,32 +11,17 @@ resource "aws_sns_topic" "terraform_state_alerts" {
   })
 }
 
-locals {
-  topics = {
-    terraform_state_alerts      = aws_sns_topic.terraform_state_alerts.arn
-    s3_event_notification_topic = aws_sns_topic.s3-event-notification-topic.arn
-  }
-
-  topic_email_subscriptions = {
-    for pair in setproduct(keys(local.topics), var.email_subscriptions) :
-    "${pair[0]}-${pair[1]}" => {
-      topic_arn = local.topics[pair[0]]
-      email     = pair[1]
-    }
-  }
-}
-
-resource "aws_sns_topic_subscription" "state_backup_email" {
-  for_each  = local.topic_email_subscriptions
-  topic_arn = each.value["topic_arn"]
+resource "aws_sns_topic_subscription" "terraform_state_email_subscriptions" {
+  for_each  = toset(var.email_subscriptions)
+  topic_arn = aws_sns_topic.terraform_state_alerts.arn
   protocol  = "email"
-  endpoint  = each.value["email"]
+  endpoint  = each.value
 }
 
 ####################################################
 # Create an SNS topic with a email subscription
 ####################################################
-resource "aws_sns_topic" "s3-event-notification-topic" {
+resource "aws_sns_topic" "s3_event_notification_topic" {
   name   = "${var.naming_prefix}-s3-event-notification-topic"
   policy = <<POLICY
     {
@@ -48,7 +33,7 @@ resource "aws_sns_topic" "s3-event-notification-topic" {
         "Resource": "arn:aws:sns:${var.current_region}:${var.current_account_id}:${var.naming_prefix}-s3-event-notification-topic",
         "Condition":{
             "StringEquals":{"aws:SourceAccount":"${var.current_account_id}"},
-            "ArnLike":{"aws:SourceArn":"${aws_s3_bucket.terraform_state.arn}"}
+            "ArnLike":{"aws:SourceArn":"${var.bucket_terraform_state_arn}"}
         }
       }]
     }
@@ -59,4 +44,11 @@ POLICY
     Type    = "notifications"
     Purpose = "s3-event-notification"
   })
+}
+
+resource "aws_sns_topic_subscription" "s3_event_email_subscriptions" {
+  for_each  = toset(var.email_subscriptions)
+  topic_arn = aws_sns_topic.s3_event_notification_topic.arn
+  protocol  = "email"
+  endpoint  = each.value
 }

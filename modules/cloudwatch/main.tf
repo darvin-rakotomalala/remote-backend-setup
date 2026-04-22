@@ -29,10 +29,10 @@ resource "aws_cloudwatch_metric_alarm" "long_held_lock_alarm" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    TableName = aws_dynamodb_table.terraform_locks.id
+    TableName = var.dynamodb_table_terraform_locks_id
   }
 
-  alarm_actions = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-long-held-terraform-lock-alarm"
@@ -55,11 +55,11 @@ resource "aws_cloudwatch_metric_alarm" "replication_latency" {
   alarm_description   = "DynamoDB global table replication latency is above 5 seconds"
 
   dimensions = {
-    TableName       = aws_dynamodb_table.terraform_locks.name
+    TableName       = var.dynamodb_table_name
     ReceivingRegion = var.secondary_region
   }
 
-  alarm_actions = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-dynamodb-table-replication-latency"
@@ -79,7 +79,7 @@ resource "aws_cloudwatch_metric_alarm" "excessive_state_access" {
   statistic           = "Sum"
   threshold           = 100 # > 100 accesses in 5 minutes
   alarm_description   = "Unusual Terraform state access detected"
-  alarm_actions       = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions       = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-excessive-terraform-state-access"
@@ -101,23 +101,23 @@ resource "aws_cloudwatch_metric_alarm" "state_modification" {
   alarm_description   = "Alert when Terraform state is modified"
 
   dimensions = {
-    BucketName = aws_s3_bucket.terraform_state.id
+    BucketName = var.bucket_terraform_state_id
     FilterId   = "AllObjects"
   }
 
-  alarm_actions = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-terraform-state-modified"
-    Type    = "terraform-state-modified"
-    Purpose = "Auditing"
+    Type    = "auditing"
+    Purpose = "terraform-state-modified"
   })
 }
 
 # Alert on state file access
 resource "aws_cloudwatch_log_metric_filter" "state_access" {
   name           = "${var.naming_prefix}-terraform-state-access"
-  pattern        = "{ $.requestParameters.bucketName = \"${aws_s3_bucket.terraform_state.id}\" }"
+  pattern        = "{ $.requestParameters.bucketName = \"${var.bucket_terraform_state_id}\" }"
   log_group_name = aws_cloudwatch_log_group.terraform_state_log_group.name
 
   metric_transformation {
@@ -141,12 +141,12 @@ resource "aws_cloudwatch_metric_alarm" "state_access" {
   threshold           = 5
   alarm_description   = "More than 5 access over 5 minute period"
   unit                = "Count"
-  alarm_actions       = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions       = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-terraform-state-file-access"
-    Type    = "terraform-state-file-access"
-    Purpose = "Auditing"
+    Type    = "auditing"
+    Purpose = "auditing-terraform-state-file-access"
   })
 }
 
@@ -163,16 +163,16 @@ resource "aws_cloudwatch_metric_alarm" "state_backup_stale" {
   alarm_description   = "No new state file versions in the last 24 hours"
 
   dimensions = {
-    BucketName  = aws_s3_bucket.terraform_state.id
+    BucketName  = var.bucket_terraform_state_id
     StorageType = "AllStorageTypes"
   }
 
-  alarm_actions = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-terraform-state-backup-stale"
-    Type    = "terraform-state-backup-stale"
-    Purpose = "Auditing"
+    Type    = "auditing"
+    Purpose = "terraform-state-backup-stale"
   })
 }
 
@@ -189,17 +189,43 @@ resource "aws_cloudwatch_metric_alarm" "replication_lag" {
   alarm_description   = "Terraform state replication is lagging"
 
   dimensions = {
-    SourceBucket      = aws_s3_bucket.terraform_state.id
-    DestinationBucket = aws_s3_bucket.state_backup_replica.id
+    SourceBucket      = var.bucket_terraform_state_id
+    DestinationBucket = var.bucket_state_backup_replica_id
     RuleId            = "replicate-all-state"
   }
 
-  alarm_actions = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-terraform-state-replication-lag"
-    Type    = "terraform-state-replication"
-    Purpose = "Backup"
+    Type    = "backup"
+    Purpose = "terraform-state-replication"
+  })
+}
+
+# Alarm when replication is failing
+resource "aws_cloudwatch_metric_alarm" "replication_failure" {
+  alarm_name          = "s3-replication-failure"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "OperationFailedReplication"
+  namespace           = "AWS/S3"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Alarm when replication is failing"
+
+  dimensions = {
+    SourceBucket      = var.bucket_terraform_state_id
+    DestinationBucket = var.bucket_state_backup_replica_id
+    RuleId            = "replicate-all"
+  }
+  alarm_actions = [var.sns_terraform_state_alerts_arn]
+
+  tags = merge(var.common_tags, {
+    Name    = "${var.naming_prefix}-s3-replication-failure"
+    Type    = "replication"
+    Purpose = "s3-replication-failure"
   })
 }
 
@@ -213,8 +239,8 @@ resource "aws_cloudwatch_log_group" "oidc_events" {
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-github-oidc"
-    Type    = "github-oidc-logs"
-    Purpose = "Deployement"
+    Type    = "deployement"
+    Purpose = "github-oidc-logs"
   })
 }
 
@@ -242,12 +268,12 @@ resource "aws_cloudwatch_metric_alarm" "oidc_failures_alarm" {
   statistic           = "Sum"
   threshold           = 5
   alarm_description   = "Multiple failed OIDC authentication attempts detected"
-  alarm_actions       = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions       = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-github-oidc-auth-failures"
-    Type    = "github-oidc-auth-failures"
-    Purpose = "security"
+    Type    = "security"
+    Purpose = "github-oidc-auth-failures"
   })
 }
 
@@ -279,12 +305,12 @@ resource "aws_cloudwatch_metric_alarm" "unauthorized_api_calls" {
   statistic           = "Sum"
   threshold           = 10
   alarm_description   = "Alert when unauthorized API calls exceed threshold"
-  alarm_actions       = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions       = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-unauthorized-api-calls"
-    Type    = "unauthorized-api-calls"
-    Purpose = "security"
+    Type    = "security"
+    Purpose = "unauthorized-api-calls"
   })
 }
 
@@ -311,11 +337,11 @@ resource "aws_cloudwatch_metric_alarm" "root_usage" {
   statistic           = "Sum"
   threshold           = 1
   alarm_description   = "Alert when root account is used"
-  alarm_actions       = [aws_sns_topic.terraform_state_alerts.arn]
+  alarm_actions       = [var.sns_terraform_state_alerts_arn]
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-root-account-usage"
-    Type    = "root-account-usage"
-    Purpose = "security"
+    Type    = "security"
+    Purpose = "root-account-usage"
   })
 }

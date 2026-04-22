@@ -34,7 +34,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "cloudtrail_logs" 
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.cloudtrail.arn
+      kms_master_key_id = var.cloudtrail_kms_key_arn
     }
     bucket_key_enabled = true
   }
@@ -84,7 +84,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "audit_logs" {
 resource "aws_cloudtrail" "cloudtrail_logs" {
   name                          = "${var.naming_prefix}-terraform-state-audit"
   s3_bucket_name                = aws_s3_bucket.cloudtrail_logs.id
-  kms_key_id                    = aws_kms_key.cloudtrail.arn
+  kms_key_id                    = var.cloudtrail_kms_key_arn
   enable_log_file_validation    = true # relates digest files so you can verify log integrity
   include_global_service_events = true # captures IAM, STS, and CloudFront events
   is_multi_region_trail         = true # captures events from all AWS regions
@@ -93,8 +93,8 @@ resource "aws_cloudtrail" "cloudtrail_logs" {
   depends_on = [aws_s3_bucket_policy.cloudtrail_audit_logs]
 
   # Send logs to CloudWatch for real-time analysis
-  cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.terraform_state_log_group.arn}:*"
-  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail_logs.arn
+  cloud_watch_logs_group_arn = "${var.terraform_state_log_group_arn}:*"
+  cloud_watch_logs_role_arn  = var.iam_role_cloudtrail_logs_arn
 
   # Capture data events for the state bucket
   # Log all management events
@@ -104,7 +104,7 @@ resource "aws_cloudtrail" "cloudtrail_logs" {
 
     data_resource {
       type   = "AWS::S3::Object"
-      values = ["arn:aws:s3:::${aws_s3_bucket.terraform_state.arn}/"]
+      values = ["arn:aws:s3:::${var.bucket_terraform_state_arn}/"]
     }
   }
 
@@ -115,13 +115,57 @@ resource "aws_cloudtrail" "cloudtrail_logs" {
 
     data_resource {
       type   = "AWS::DynamoDB::Table"
-      values = ["arn:aws:dynamodb:${var.current_region}:${var.current_account_id}:table/${aws_dynamodb_table.terraform_locks.name}"]
+      values = ["arn:aws:dynamodb:${var.current_region}:${var.current_account_id}:table/${var.dynamodb_table_name}"]
     }
   }
 
   tags = merge(var.common_tags, {
     Name    = "${var.naming_prefix}-terraform-state-trail"
-    Type    = "terraform-state-auditing"
-    Purpose = "security-auditing"
+    Type    = "security-auditing"
+    Purpose = "terraform-state-auditing"
+  })
+}
+
+
+#########################################################
+# CloudTrail requires a specific bucket policy structure
+#########################################################
+
+resource "aws_s3_bucket_policy" "cloudtrail_audit_logs" {
+  bucket = aws_s3_bucket.cloudtrail_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AWSCloudTrailAclCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "s3:GetBucketAcl"
+        Resource = "arn:aws:s3:::${aws_s3_bucket.cloudtrail_logs.bucket}"
+        Condition = {
+          StringEquals = {
+            "aws:SourceArn" = "arn:aws:cloudtrail:${var.current_region}:${var.current_account_id}:trail/${var.project_name}-${var.environment}-terraform-state-audit"
+          }
+        }
+      },
+      {
+        Sid    = "AWSCloudTrailWrite"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "arn:aws:s3:::${aws_s3_bucket.cloudtrail_logs.bucket}/AWSLogs/${var.current_account_id}/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+            "aws:SourceArn" = "arn:aws:cloudtrail:${var.current_region}:${var.current_account_id}:trail/${var.project_name}-${var.environment}-terraform-state-audit"
+          }
+        }
+      }
+    ]
   })
 }

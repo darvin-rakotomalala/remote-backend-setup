@@ -2,6 +2,7 @@
 # DynamoDB table for state locking
 # Global DynamoDB table for locking
 #################################################
+
 resource "aws_dynamodb_table" "terraform_locks" {
   name         = "${var.naming_prefix}-terraform-locks"
   billing_mode = "PAY_PER_REQUEST" # On-demand is recommended for global tables
@@ -29,19 +30,19 @@ resource "aws_dynamodb_table" "terraform_locks" {
   # Primary table KMS encryption
   server_side_encryption {
     enabled     = true
-    kms_key_arn = aws_kms_key.terraform_state.arn
+    kms_key_arn = var.terraform_state_kms_key_arn
   }
 
   replica {
     region_name            = var.secondary_region
     point_in_time_recovery = true
-    kms_key_arn            = aws_kms_key.dynamodb_replica.arn # Custom CMK per replica
+    kms_key_arn            = var.dynamodb_replica_kms_key_arn # Custom CMK per replica
     propagate_tags         = true
   }
 
   tags = merge(var.common_tags, {
     Name         = "${var.naming_prefix}-terraform-locks-table"
-    Type         = "terraform-locks-table"
+    Type         = "locks-table"
     Purpose      = "terraform-state-locking"
     BackupPolicy = var.backup_policy
   })
