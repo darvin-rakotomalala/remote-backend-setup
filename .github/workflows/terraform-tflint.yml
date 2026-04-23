@@ -34,7 +34,6 @@ env:
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
   TF_VERSION: ${{ vars.TF_VERSION }}
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # WORKING_DIR: './terraform'
 
 jobs:
@@ -42,6 +41,8 @@ jobs:
     name: Run TFLint
     runs-on: ubuntu-latest
     environment: dev
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -67,7 +68,7 @@ jobs:
         id: tflint
         run: |
             set +e
-            tflint --recursive --force --format compact 2>&1 | tee tflint-output.txt
+            tflint --recursive --format compact 2>&1 | tee tflint-output.txt
             EXIT_CODE=${PIPESTATUS[0]}
             echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
             exit $EXIT_CODE
