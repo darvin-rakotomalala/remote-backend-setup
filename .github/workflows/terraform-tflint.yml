@@ -34,6 +34,7 @@ env:
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
   TF_VERSION: ${{ vars.TF_VERSION }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # WORKING_DIR: './terraform'
 
 jobs:
@@ -66,10 +67,16 @@ jobs:
         id: tflint
         run: |
             set +e
-            tflint --recursive --format compact 2>&1 | tee tflint-output.txt
+            tflint --recursive --force --format compact 2>&1 | tee tflint-output.txt
             EXIT_CODE=${PIPESTATUS[0]}
             echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
             exit $EXIT_CODE
+
+        # TFLint Exit Codes Reference
+        # 0   No issues found
+        # 1   Errors found
+        # 2   Warnings found (when not using --force)
+        # 3   TFLint internal error
 
       - name: Show TFLint errors summary
         if: failure() && steps.tflint.outputs.exit_code != '0'
