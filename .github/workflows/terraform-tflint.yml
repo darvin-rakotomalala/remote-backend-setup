@@ -64,13 +64,28 @@ jobs:
 
       - name: Run TFLint (recursive)
         id: tflint
-        # Runs tflint --recursive to lint all Terraform modules in the repo
-        run: tflint --recursive --format=sarif > tflint-results.sarif
-        # run: tflint --recursive --format=compact
+        run: |
+            set +e
+            tflint --recursive --format compact 2>&1 | tee tflint-output.txt
+            EXIT_CODE=${PIPESTATUS[0]}
+            echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+            exit $EXIT_CODE
 
-      - name: Upload TFLint results as artifact
-        uses: actions/upload-artifact@v6
+      - name: Show TFLint errors summary
+        if: failure() && steps.tflint.outputs.exit_code != '0'
+        run: |
+            echo "## ❌ TFLint found issues" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat tflint-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo ""
+            echo "---- TFLint errors ----"
+            cat tflint-output.txt
+
+      - name: Upload TFLint output
+        if: failure() && steps.tflint.outputs.exit_code != '0'
+        uses: actions/upload-artifact@v4
         with:
           name: tflint-results
-          path: tflint-results/
-          retention-days: 30
+          path: tflint-output.txt
+          retention-days: 7
