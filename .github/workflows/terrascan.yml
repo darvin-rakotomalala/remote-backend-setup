@@ -38,17 +38,15 @@ jobs:
     name: Terrascan IaC Security Scan
     runs-on: ubuntu-latest
     environment: dev
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
         # ── Checkout source ───────────────────────────────────────────────
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
         # ── Configure AWS credentials (OIDC) ───────────────────────────────────────────────
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6.1.0
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
@@ -56,7 +54,7 @@ jobs:
         # ── Run Terrascan ─────────────────────────────────────────────────
       - name: Run Terrascan
         id: terrascan
-        uses: tenable/terrascan-action@main
+        uses: tenable/terrascan-action@v1.5.0
         with:
           iac_type: terraform           # IaC type: terraform | k8s | helm | kustomize | docker | arm | cloudformation
           iac_version: v15              # Terraform version (for parser hints)
@@ -72,7 +70,7 @@ jobs:
         # ── Upload SARIF to GitHub Security tab ───────────────────────────
       - name: Upload SARIF report
         if: always() # Run even if terrascan finds violations
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: terrascan-results.sarif
           category: terrascan
@@ -84,7 +82,7 @@ jobs:
         with:
           name: terrascan-sarif-${{ github.run_number }}
           path: terrascan.sarif
-          retention-days: 30
+          retention-days: 7
 
         # ── Comment on Pull Request ───────────────────────────────────────
       - name: Comment scan result on PR
