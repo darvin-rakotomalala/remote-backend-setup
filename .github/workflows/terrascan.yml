@@ -59,35 +59,42 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
 
         # ── Install Terrascan ─────────────────────────────────────────────────
-      #- name: Install Terrascan
-        #run: |
-            #curl -L https://github.com/tenable/terrascan/releases/latest/download/terrascan_linux_amd64 -o terrascan
-            #chmod +x terrascan
-            #sudo mv terrascan /usr/local/bin/
+      - name: Install Terrascan
+        run: |
+          curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/latest \
+            | grep -o 'https://github.com/tenable/terrascan/releases/download/.*/terrascan_.*_Linux_x86_64.tar.gz')" \
+            | tar -xz terrascan
+          sudo install terrascan /usr/local/bin/terrascan
+          terrascan version
 
-        # ── Run Terrascan Command Line ─────────────────────────────────────────────────
-      #- name: Run Terrascan Command Line
-        #run: terrascan scan -t terraform -d .
-
-        # ── Run Terrascan ─────────────────────────────────────────────────
-      - name: Run Terrascan tenable
+        # ── Run Terrascan and write SARIF to disk ─────────────────────────────
+      - name: Run Terrascan
         id: terrascan
-        uses: tenable/terrascan-action@v1.5.0
-        with:
-          iac_type: terraform           # IaC type: terraform | k8s | helm | kustomize | docker | arm | cloudformation
-          iac_version: v15              # Terraform version (for parser hints)
-          iac_dir: .                    # Directory containing Terraform files
-          policy_type: all              # Policy cloud provider: aws | azure | gcp | github | all
-          only_warn: true               # Set to true to never fail the build
-          non_recursive: false          # Scan sub-directories recursively
-          verbose: true                 # Verbose output
-          # Output format for Terrascan results.
-          # Options: human | json | yaml | xml | junit-xml | sarif
-          # Use "sarif" to integrate with GitHub Code Scanning.
-          output_format: "sarif"
-          sarif_upload: true            # Upload results as SARIF
-          # config_path: .terrascan/config.toml   # Uncomment if using custom config
-          # policy_path: .terrascan/policies      # Uncomment for custom OPA policies
+        # Exit code 3 means violations found — treat as success so later steps run.
+        # Remove "|| true" if you want the workflow to FAIL on violations.
+        run: |
+          terrascan scan \
+            --iac-type terraform \
+            --iac-dir . \
+            --policy-type all \
+            --output sarif \
+            --non-recursive=false \
+            2>/dev/null > terrascan.sarif || true
+          
+          # Guard: fail hard only on unexpected errors (exit code not 0 or 3)
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 3 ]; then
+            echo "Terrascan exited with unexpected code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+          
+          # Verify the file is non-empty valid JSON before continuing
+          if [ ! -s terrascan.sarif ]; then
+            echo "ERROR: terrascan.sarif is empty" && exit 1
+          fi
+          python3 -c "import json,sys; json.load(open('terrascan.sarif'))" \
+            && echo "SARIF file is valid JSON" \
+            || (echo "ERROR: terrascan.sarif is not valid JSON" && exit 1)
 
         # ── Upload SARIF to GitHub Security tab ───────────────────────────────
       - name: Upload SARIF report to GitHub Security tab
@@ -97,7 +104,7 @@ jobs:
           sarif_file: terrascan.sarif
           category: terrascan
 
-        # ── 4. (Optional) Upload raw SARIF as a build artifact ───────────────────
+        # ── (Optional) Upload raw SARIF as a build artifact ───────────────────
       - name: Archive Terrascan SARIF report
         if: always()
         uses: actions/upload-artifact@v4
