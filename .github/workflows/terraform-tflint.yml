@@ -28,6 +28,8 @@ permissions:
   issues: write
 
 env:
+  # Force all JavaScript actions to run on Node.js 24 to silence Node 20 deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # verbosity setting for Terraform logs
   TF_LOG: INFO
   AWS_REGION: ${{ vars.AWS_REGION }}
