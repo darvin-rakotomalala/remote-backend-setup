@@ -69,7 +69,6 @@ jobs:
 
       - name: Run Terrascan Command Line
         run:
-          terrascan init
           terrascan scan -i terraform -t aws --find-vuln
 
         # ── Run Terrascan and write SARIF to disk ─────────────────────────────
