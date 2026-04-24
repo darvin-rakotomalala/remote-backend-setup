@@ -67,10 +67,6 @@ jobs:
           sudo install terrascan /usr/local/bin/terrascan
           terrascan version
 
-      - name: Run Terrascan Command Line
-        run:
-          terrascan scan -i terraform -t aws --find-vuln
-
         # ── Run Terrascan and write SARIF to disk ─────────────────────────────
       - name: Run Terrascan
         id: terrascan
