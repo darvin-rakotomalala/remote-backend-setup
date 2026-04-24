@@ -1,0 +1,102 @@
+name: Terrascan Security Scan
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "*" ]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+    # paths:
+    # - terraform/**
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  id-token: write         # Required for requesting the OIDC JWT
+  contents: read          # Required for actions/checkout
+  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+  actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  pull-requests: write    # Required for plan comments
+  issues: write
+
+env:
+  # verbosity setting for Terraform logs
+  TF_LOG: INFO
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
+  TF_VERSION: ${{ vars.TF_VERSION }}
+  # WORKING_DIR: './terraform'
+
+jobs:
+  terrascan:
+    name: Terrascan IaC Security Scan
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+        # ── Checkout source ───────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+        # ── Configure AWS credentials (OIDC) ───────────────────────────────────────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+
+        # ── Run Terrascan ─────────────────────────────────────────────────
+      - name: Run Terrascan
+        id: terrascan
+        uses: tenable/terrascan-action@main
+        with:
+          iac_type: terraform           # IaC type: terraform | k8s | helm | kustomize | docker | arm | cloudformation
+          iac_version: v15              # Terraform version (for parser hints)
+          iac_dir: .                    # Directory containing Terraform files
+          policy_type: all              # Policy cloud provider: aws | azure | gcp | github | all
+          only_warn: false              # Set to true to never fail the build
+          non_recursive: false          # Scan sub-directories recursively
+          verbose: true                 # Verbose output
+          sarif_upload: true            # Upload results as SARIF
+          # config_path: .terrascan/config.toml   # Uncomment if using custom config
+          # policy_path: .terrascan/policies      # Uncomment for custom OPA policies
+
+        # ── Upload SARIF to GitHub Security tab ───────────────────────────
+      - name: Upload SARIF report
+        if: always() # Run even if terrascan finds violations
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: terrascan-results.sarif
+          category: terrascan
+
+        # ── Upload SARIF as build artifact ────────────────────────────────
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrascan-sarif-${{ github.run_number }}
+          path: terrascan.sarif
+          retention-days: 30
+
+        # ── Comment on Pull Request ───────────────────────────────────────
+      - name: Comment scan result on PR
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ⚠️ Terrascan Security Violations Found\n\nTerrascan detected security policy violations in this PR.\n\nPlease review the [Security tab](' +
+                    `https://github.com/${context.repo.owner}/${context.repo.repo}/security/code-scanning` +
+                    ') or the workflow logs for details.\n\n> Run `terrascan scan -t all` locally to reproduce.'
+            })
