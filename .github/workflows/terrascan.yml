@@ -71,23 +71,40 @@ jobs:
           # config_path: .terrascan/config.toml   # Uncomment if using custom config
           # policy_path: .terrascan/policies      # Uncomment for custom OPA policies
 
+        # ── Validate SARIF before upload ──────────────────────────────────
+      - name: Validate SARIF file
+        if: always()
+        id: validate_sarif
+        run: |
+          if [ ! -f terrascan.sarif ]; then
+            echo "sarif_valid=false" >> $GITHUB_OUTPUT
+            echo "::warning::terrascan.sarif not found, skipping upload"
+            exit 0
+          fi
+          if ! python3 -c "import json,sys; json.load(open('terrascan.sarif'))" 2>/dev/null; then
+            echo "sarif_valid=false" >> $GITHUB_OUTPUT
+            echo "::warning::terrascan.sarif is empty or invalid JSON, skipping upload"
+            exit 0
+          fi
+          echo "sarif_valid=true" >> $GITHUB_OUTPUT
+
         # ── Upload SARIF to GitHub Security tab ───────────────────────────
       - name: Upload SARIF report
-        if: always() # Run even if terrascan finds violations
-        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.validate_sarif.outputs.sarif_valid == 'true'
+        uses: github/codeql-action/upload-sarif@v4        # v4 runs on Node 24 (released Oct 2025)
         with:
-          sarif_file: terrascan.sarif
+          sarif_file: terrascan.sarif                     # terrascan-action always writes to terrascan.sarif
           category: terrascan
 
         # ── Upload SARIF as build artifact ────────────────────────────────
       - name: Upload SARIF artifact
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: always() && steps.validate_sarif.outputs.sarif_valid == 'true'
+        uses: actions/upload-artifact@v4                  # v4 runs on Node 24 as of v4.6+
         with:
           name: terrascan-sarif-${{ github.run_number }}
           path: terrascan.sarif
           retention-days: 7
-
+      
         # ── Comment on Pull Request ───────────────────────────────────────
       - name: Comment scan result on PR
         if: github.event_name == 'pull_request' && failure()
