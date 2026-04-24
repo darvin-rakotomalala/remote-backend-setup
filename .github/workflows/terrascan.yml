@@ -58,8 +58,17 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
 
+      - name: Install Terrascan 1
+        run: |
+          curl -L https://github.com/tenable/terrascan/releases/latest/download/terrascan_linux_amd64 -o terrascan
+          chmod +x terrascan
+          sudo mv terrascan /usr/local/bin/
+
+      - name: Run Terrascan Command Line
+        run: terrascan scan -t terraform -d .
+
         # ── Install Terrascan ─────────────────────────────────────────────────
-      - name: Install Terrascan
+      - name: Install Terrascan 2
         run: |
           curl -L "$(curl -s https://api.github.com/repos/tenable/terrascan/releases/latest \
             | grep -o 'https://github.com/tenable/terrascan/releases/download/.*/terrascan_.*_Linux_x86_64.tar.gz')" \
