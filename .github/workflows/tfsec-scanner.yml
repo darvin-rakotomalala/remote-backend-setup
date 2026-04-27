@@ -58,19 +58,30 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
 
+        # ── Install tfsec CLI ───────────────────────────────
+      - name: Install tfsec
+        run: |
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+
         # ── Run tfsec ───────────────────────────────
       - name: Run tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
-        with:
-          version: latest
-          working_directory: . # ./terraform
-          format: sarif
-          sarif_file: tfsec-results.sarif
-          soft_fail: true # don't fail the step so SARIF gets uploaded
-          #additional_args: --minimum-severity HIGH  # Only flag HIGH/CRITICAL issues
-          # Fail the workflow if tfsec finds issues at this severity or higher
-          # Options: CRITICAL, HIGH, MEDIUM, LOW (default: HIGH)
-          #minimum_severity: HIGH # Fail the build on high and critical issues
+        run: |
+          tfsec . \
+            --format sarif \
+            --out tfsec-results.sarif \
+            --soft-fail
+            # --minimum-severity HIGH   # Uncomment to flag only HIGH/CRITICAL issues
+        # working_directory: ./terraform  # Uncomment if Terraform lives in a subdirectory
+
+        # ── Verify SARIF file was created ───────────────────────────────
+      - name: Verify SARIF output
+        if: always()
+        run: |
+          if [ ! -f tfsec-results.sarif ]; then
+            echo "❌ tfsec-results.sarif was not created!"
+            exit 1
+          fi
+          echo "✅ tfsec-results.sarif found ($(wc -c < tfsec-results.sarif) bytes)"
 
         # ── Upload SARIF to GitHub Security tab ────────────────────────────────
       - name: Upload SARIF results
