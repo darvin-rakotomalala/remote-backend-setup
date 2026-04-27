@@ -73,8 +73,11 @@ jobs:
           tfsec . \
             --format sarif \
             --out tfsec-results.sarif \
+            --minimum-severity MEDIUM \
             --soft-fail
         # Change '.' to './terraform' if your Terraform code is in a subdirectory
+        # --minimum-severity options: CRITICAL | HIGH | MEDIUM | LOW (default: LOW)
+        # Only findings at or above the set level will appear in tfsec-results.sarif
 
       - name: Upload SARIF to GitHub Security tab
         if: always()
