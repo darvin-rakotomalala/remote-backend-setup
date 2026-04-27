@@ -58,69 +58,35 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
 
-        # ── Install tfsec CLI ───────────────────────────────
+        # ── Install tfsec ───────────────────────────────────────────────
       - name: Install tfsec
         run: |
-          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          TFSEC_VERSION="v1.28.11"
+          curl -sL "https://github.com/aquasecurity/tfsec/releases/download/${TFSEC_VERSION}/tfsec-linux-amd64" \
+            -o /usr/local/bin/tfsec
+          chmod +x /usr/local/bin/tfsec
+          tfsec --version
 
-        # ── Run tfsec ───────────────────────────────
+        # ── Checkout source ───────────────────────────────────────────────
       - name: Run tfsec
         run: |
           tfsec . \
             --format sarif \
             --out tfsec-results.sarif \
             --soft-fail
-            # --minimum-severity HIGH   # Uncomment to flag only HIGH/CRITICAL issues
-        # working_directory: ./terraform  # Uncomment if Terraform lives in a subdirectory
+        # Change '.' to './terraform' if your Terraform code is in a subdirectory
 
-        # ── Verify SARIF file was created ───────────────────────────────
-      - name: Verify SARIF output
+      - name: Upload SARIF to GitHub Security tab
         if: always()
-        run: |
-          if [ ! -f tfsec-results.sarif ]; then
-            echo "❌ tfsec-results.sarif was not created!"
-            exit 1
-          fi
-          echo "✅ tfsec-results.sarif found ($(wc -c < tfsec-results.sarif) bytes)"
-
-        # ── Upload SARIF to GitHub Security tab ────────────────────────────────
-      - name: Upload SARIF results
-        if: always() # Upload even if tfsec found issues
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: tfsec-results.sarif
           category: tfsec
 
-        # ── (Optional) Upload raw SARIF as a build artifact ───────────────────
-      - name: Archive tfsec SARIF report
+      - name: Archive SARIF report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tfsec-sarif-report
           path: tfsec-results.sarif
           retention-days: 7
-
-        # ── Post a summary comment on Pull Requests ────────────────────────────
-      - name: Post PR comment (on failure)
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '## ❌ tfsec Security Scan Failed\n\nOne or more Terraform security issues were found.\nPlease review the **Security** tab or the workflow logs for details.'
-            })
-
-      - name: Post PR comment (on success)
-        if: success() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '## ✅ tfsec Security Scan Passed\n\nNo high/critical Terraform security issues found.'
-            })
