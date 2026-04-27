@@ -213,6 +213,8 @@ remote-backend-setup/
     - ```terraform-tflint.yml``` — TFLint automatically scans ```.tf``` files and reports potential issues. It works by
       analyzing Terraform code for stylistic errors, security problems, or provider-specific issues before deployment.
     - ```terrascan.yml``` — To scan Terraform code for security vulnerabilities.
+    - ```tfsec-scanner.yml``` — Terraform workflow to catch security misconfigurations before they reach your cloud
+      infrastructure.
     - 
 
 ### Why State Access Matters

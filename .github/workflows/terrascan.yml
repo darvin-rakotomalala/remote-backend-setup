@@ -16,9 +16,9 @@ on:
       - '**/README.md'
       - 'Documentation/**'
       - 'Verification/**'
-  schedule:
+  #schedule:
     # Run a full scan every day at midnight UTC
-    - cron: "0 0 * * *"
+    #- cron: "0 0 * * *"
   workflow_dispatch: # Allow manual trigger
 
 permissions:

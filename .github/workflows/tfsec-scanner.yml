@@ -1,0 +1,115 @@
+name: Terraform Security Scan (tfsec)
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "*" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+    # paths:
+    # - terraform/**
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+    #schedule:
+    # Run a full scan every day at midnight UTC
+    #- cron: "0 0 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  id-token: write         # Required for requesting the OIDC JWT
+  contents: read          # Required for actions/checkout
+  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+  actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  pull-requests: write    # Required for plan comments
+  issues: write
+
+env:
+  # Force all JavaScript actions to run on Node.js 24 to silence Node 20 deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # verbosity setting for Terraform logs
+  TF_LOG: INFO
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
+  TF_VERSION: ${{ vars.TF_VERSION }}
+  # WORKING_DIR: './terraform'
+
+jobs:
+  tfsec:
+    name: tfsec Security Scan
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+        # ── Checkout source ───────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+        # ── Configure AWS credentials (OIDC) ───────────────────────────────────────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+
+        # ── Run tfsec ───────────────────────────────
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          version: latest
+          working_directory: . # ./terraform
+          format: sarif
+          sarif_file: tfsec-results.sarif
+          soft_fail: false
+          #additional_args: --minimum-severity HIGH  # Only flag HIGH/CRITICAL issues
+          # Fail the workflow if tfsec finds issues at this severity or higher
+          # Options: CRITICAL, HIGH, MEDIUM, LOW (default: HIGH)
+          #minimum_severity: HIGH # Fail the build on high and critical issues
+
+        # ── Upload SARIF to GitHub Security tab ────────────────────────────────
+      - name: Upload SARIF results
+        if: always() # Upload even if tfsec found issues
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec-results.sarif
+          category: tfsec
+
+        # ── (Optional) Upload raw SARIF as a build artifact ───────────────────
+      - name: Archive tfsec SARIF report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfsec-sarif-report
+          path: tfsec.sarif
+          retention-days: 7
+
+        # ── Post a summary comment on Pull Requests ────────────────────────────
+      - name: Post PR comment (on failure)
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ❌ tfsec Security Scan Failed\n\nOne or more Terraform security issues were found.\nPlease review the **Security** tab or the workflow logs for details.'
+            })
+
+      - name: Post PR comment (on success)
+        if: success() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ✅ tfsec Security Scan Passed\n\nNo high/critical Terraform security issues found.'
+            })
