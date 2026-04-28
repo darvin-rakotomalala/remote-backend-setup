@@ -39,6 +39,7 @@ env:
   TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
   TF_VERSION: ${{ vars.TF_VERSION }}
   INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+  TF_VAR_FILE: dev-terraform.tfvars # environments/prod.tfvars
   # WORKING_DIR: './terraform'
 
 jobs:
@@ -72,7 +73,7 @@ jobs:
           git checkout origin/${{ github.base_ref }} -- .
           infracost breakdown \
             --path=. \
-            --terraform-var-file=${{ <file_path> }} \
+            --terraform-var-file=${{ env.TF_VAR_FILE }} \
             --format=json \
             --out-file=infracost-baseline.json
 
@@ -82,7 +83,7 @@ jobs:
           git checkout ${{ github.head_ref }}
           infracost diff \
             --path=. \
-            --terraform-var-file=${{ <file_path> }} \
+            --terraform-var-file=${{ env.TF_VAR_FILE }} \
             --compare-to=infracost-baseline.json \
             --format=json \
             --out-file=infracost-diff.json
@@ -92,7 +93,7 @@ jobs:
         run: |
           infracost breakdown \
             --path=. \
-            --terraform-var-file=${{ <file_path> }} \
+            --terraform-var-file=${{ env.TF_VAR_FILE }} \
             --format=table
 
         # ── Upload Infracost Table Breakdown ───────────────────────────────────────────────
@@ -100,7 +101,7 @@ jobs:
         run: |
           infracost breakdown \
             --path=. \
-            --terraform-var-file=${{ <file_path> }} \
+            --terraform-var-file=${{ env.TF_VAR_FILE }} \
             --format=table \
             --out-file=infracost-breakdown.txt
         continue-on-error: true
