@@ -70,8 +70,6 @@ jobs:
       - name: Generate Infracost Baseline
         if: github.event_name == 'push'
         run: |
-          git fetch origin ${{ github.base_ref }}
-          git checkout origin/${{ github.base_ref }} -- .
           infracost breakdown \
             --path=. \
             --terraform-var-file=${{ env.TF_VAR_FILE }} \
@@ -82,7 +80,6 @@ jobs:
       - name: Generate Infracost Diff
         if: github.event_name == 'push'
         run: |
-           git checkout ${{ github.head_ref }}
            infracost diff \
              --path=. \
              --terraform-var-file=${{ env.TF_VAR_FILE }} \
