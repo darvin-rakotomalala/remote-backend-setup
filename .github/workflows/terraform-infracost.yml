@@ -1,0 +1,113 @@
+name: Infracost Cost Estimation
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "*" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+    # paths:
+    # - terraform/**
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+    #schedule:
+    # Run a full scan every day at midnight UTC
+    #- cron: "0 0 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  id-token: write         # Required for requesting the OIDC JWT
+  contents: read          # Required for actions/checkout
+  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+  actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  pull-requests: write    # Required for plan comments
+  issues: write
+
+env:
+  # Force all JavaScript actions to run on Node.js 24 to silence Node 20 deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # verbosity setting for Terraform logs
+  TF_LOG: INFO
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
+  TF_VERSION: ${{ vars.TF_VERSION }}
+  INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+  # WORKING_DIR: './terraform'
+
+jobs:
+  tfsec:
+    name: infracost
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+        # ── Checkout source ───────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+        # ── Configure AWS credentials (OIDC) ───────────────────────────────────────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+
+        # ── Setup Infracost ───────────────────────────────────────────────
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ env.INFRACOST_API_KEY }}
+
+        # ── Generate Infracost Baseline ───────────────────────────────────────────────
+      - name: Generate Infracost Baseline
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          git checkout origin/${{ github.base_ref }} -- .
+          infracost breakdown \
+            --path=. \
+            --terraform-var-file=${{ <file_path> }} \
+            --format=json \
+            --out-file=infracost-baseline.json
+
+        # ── Generate Infracost Diff ───────────────────────────────────────────────
+      - name: Generate Infracost Diff
+        run: |
+          git checkout ${{ github.head_ref }}
+          infracost diff \
+            --path=. \
+            --terraform-var-file=${{ <file_path> }} \
+            --compare-to=infracost-baseline.json \
+            --format=json \
+            --out-file=infracost-diff.json
+
+        # ── Show Human-Readable Cost Breakdown in Logs ───────────────────────────────────────────────
+      - name: Show Human-Readable Cost Breakdown in Logs
+        run: |
+          infracost breakdown \
+            --path=. \
+            --terraform-var-file=${{ <file_path> }} \
+            --format=table
+
+        # ── Upload Infracost Table Breakdown ───────────────────────────────────────────────
+      - name: Upload Infracost Table Breakdown
+        run: |
+          infracost breakdown \
+            --path=. \
+            --terraform-var-file=${{ <file_path> }} \
+            --format=table \
+            --out-file=infracost-breakdown.txt
+        continue-on-error: true
+
+        # ── Upload breakdown as artifact ───────────────────────────────────────────────
+      - name: Upload breakdown as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracost-breakdown
+          path: infracost-breakdown.txt

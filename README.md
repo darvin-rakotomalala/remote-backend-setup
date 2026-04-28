@@ -215,7 +215,9 @@ remote-backend-setup/
     - ```terrascan.yml``` — To scan Terraform code for security vulnerabilities.
     - ```tfsec-scanner.yml``` — Terraform workflow to catch security misconfigurations before they reach your cloud
       infrastructure.
-    - 
+    - ```terraform-infracost.yml``` — Terraform workflow to estimate cloud infrastructure costs before deploying,
+      enabling proactive cost management and budget control.
+    - ```terraform-backend.yml``` —
 
 ### Why State Access Matters
 

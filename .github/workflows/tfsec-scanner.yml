@@ -67,7 +67,7 @@ jobs:
           chmod +x /usr/local/bin/tfsec
           tfsec --version
 
-        # ── Checkout source ───────────────────────────────────────────────
+        # ── Run tfsec ───────────────────────────────────────────────
       - name: Run tfsec
         run: |
           tfsec . \
@@ -79,6 +79,7 @@ jobs:
         # --minimum-severity options: CRITICAL | HIGH | MEDIUM | LOW (default: LOW)
         # Only findings at or above the set level will appear in tfsec-results.sarif
 
+        # ── Upload SARIF to GitHub Security tab ───────────────────────────────────────────────
       - name: Upload SARIF to GitHub Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4
@@ -86,6 +87,7 @@ jobs:
           sarif_file: tfsec-results.sarif
           category: tfsec
 
+        # ── Archive SARIF report ───────────────────────────────────────────────
       - name: Archive SARIF report
         if: always()
         uses: actions/upload-artifact@v4
