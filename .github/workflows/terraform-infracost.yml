@@ -111,3 +111,12 @@ jobs:
         with:
           name: infracost-breakdown
           path: infracost-breakdown.txt
+
+        # ── Upload Infracost JSON artifacts ───────────────────────────────────────────────
+      - name: Upload Infracost JSON artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracost-json-reports
+          path: |
+            infracost-baseline.json
+            infracost-diff.json
