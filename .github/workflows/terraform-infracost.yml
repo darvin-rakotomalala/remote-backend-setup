@@ -78,7 +78,7 @@ jobs:
             
         # ── Generate Infracost Diff ────────────────────────────────────────
       - name: Generate Infracost Diff
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
         run: |
            infracost diff \
              --path=. \
@@ -120,3 +120,44 @@ jobs:
           path: |
             infracost-baseline.json
             infracost-diff.json
+
+        # ── Upload Infracost HTML Breakdown ───────────────────────────────────────────────
+      - name: Generate Infracost HTML Breakdown
+        run: |
+          infracost breakdown \
+            --path=. \
+            --terraform-var-file=${{ env.TF_VAR_FILE }} \
+            --format=html \
+            --out-file=infracost-breakdown.html
+        continue-on-error: true
+
+        # ── Upload HTML breakdown as artifact ───────────────────────────────────────────────
+      - name: Upload Infracost HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: infracost-html-breakdown
+          path: infracost-breakdown.html
+
+        # ── Post Infracost Comment to PR ───────────────────────────────────────────────
+      - name: Post Infracost Comment to PR
+        if: github.event_name == 'pull_request'
+        run: |
+          infracost comment github \
+            --path=infracost-diff.json \
+            --repo=${{ github.repository }} \
+            --pull-request=${{ github.event.pull_request.number }} \
+            --github-token=${{ secrets.GITHUB_TOKEN }} \
+            --behavior=update
+
+        # ── Upload Infracost diff to Cloud Dashboard ───────────────────────────────────────────────
+      - name: Upload Infracost Diff to Cloud Dashboard
+        if: github.event_name == 'push'
+        run: |
+          infracost upload \
+            --path=infracost-diff.json
+        # What you'll see in the Dashboard
+        # Once uploaded, at dashboard.infracost.io you get:
+          # 💰 Cost diff per PR/commit
+          # 📈 Cost trend over time
+          # 🔔 Alerts when costs exceed thresholds
+          # 👥 Team-wide visibility across all repos
