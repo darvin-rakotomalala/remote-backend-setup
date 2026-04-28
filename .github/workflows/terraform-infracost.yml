@@ -66,8 +66,9 @@ jobs:
         with:
           api-key: ${{ env.INFRACOST_API_KEY }}
 
-        # ── Generate Infracost Baseline ───────────────────────────────────────────────
+        # ── Generate Infracost Baseline ────────────────────────────────────
       - name: Generate Infracost Baseline
+        if: github.event_name == 'push'
         run: |
           git fetch origin ${{ github.base_ref }}
           git checkout origin/${{ github.base_ref }} -- .
@@ -76,17 +77,18 @@ jobs:
             --terraform-var-file=${{ env.TF_VAR_FILE }} \
             --format=json \
             --out-file=infracost-baseline.json
-
-        # ── Generate Infracost Diff ───────────────────────────────────────────────
+            
+        # ── Generate Infracost Diff ────────────────────────────────────────
       - name: Generate Infracost Diff
+        if: github.event_name == 'push'
         run: |
-          git checkout ${{ github.head_ref }}
-          infracost diff \
-            --path=. \
-            --terraform-var-file=${{ env.TF_VAR_FILE }} \
-            --compare-to=infracost-baseline.json \
-            --format=json \
-            --out-file=infracost-diff.json
+           git checkout ${{ github.head_ref }}
+           infracost diff \
+             --path=. \
+             --terraform-var-file=${{ env.TF_VAR_FILE }} \
+             --compare-to=infracost-baseline.json \
+             --format=json \
+             --out-file=infracost-diff.json
 
         # ── Show Human-Readable Cost Breakdown in Logs ───────────────────────────────────────────────
       - name: Show Human-Readable Cost Breakdown in Logs
