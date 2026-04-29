@@ -156,7 +156,7 @@ jobs:
           infracost upload \
             --path=infracost-diff.json
         # What you'll see in the Dashboard
-        # Once uploaded, at dashboard.infracost.io you get:
+        # Once uploaded, at https://dashboard.infracost.io/org/cloud-with-darvin/overview you get:
           # 💰 Cost diff per PR/commit
           # 📈 Cost trend over time
           # 🔔 Alerts when costs exceed thresholds

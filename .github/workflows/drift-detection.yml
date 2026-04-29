@@ -1,0 +1,263 @@
+name: Terraform Drift Detection
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "*" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+    # paths:
+    # - terraform/**
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - '**/README.md'
+      - 'Documentation/**'
+      - 'Verification/**'
+  schedule:
+    - cron: '0 2 * * *'   # Daily at 2 AM UTC
+  workflow_dispatch:      # Manual triggering for testing
+
+permissions:
+  id-token: write         # Required for requesting the OIDC JWT
+  contents: read          # Required for actions/checkout
+  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+  actions: read           # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+  pull-requests: write    # Required for plan comments
+  issues: write           # GitHub issue creation
+
+env:
+  # Force all JavaScript actions to run on Node.js 24 to silence Node 20 deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # verbosity setting for Terraform logs
+  TF_LOG: INFO
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+  TF_BACKEND_S3_BUCKET: ${{ vars.TF_BACKEND_S3_BUCKET }}
+  TF_VERSION: ${{ vars.TF_VERSION }}
+  INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+  TF_VAR_FILE: dev-terraform.tfvars # environments/prod.tfvars
+  # WORKING_DIR: './terraform'
+
+jobs:
+  detect-drift:
+    name: Drift Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: dev
+    #strategy:
+      #matrix:
+      #environment: [ dev, staging, prod ]
+      #include:
+      #- environment: dev
+      #aws_account: '111111111111'
+      #working_dir: 'environments/dev'
+      #- environment: staging
+      #aws_account: '222222222222'
+      #working_dir: 'environments/staging'
+      #- environment: prod
+      #aws_account: '333333333333'
+    #working_dir: 'environments/prod'
+      #defaults:
+      #run:
+        # This configuration runs three parallel jobs, one for each environment.
+        # Each job operates in its own directory and authenticates to the appropriate AWS account.
+    #working-directory: ${{ matrix.working_dir }}
+
+    steps:
+        # ── Checkout source ───────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+        # ── Configure AWS credentials (OIDC) ───────────────────────────────────────────────
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+
+        # ── Setup Terraform ───────────────────────────────────────────────
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+        # ── Initialize Terraform ───────────────────────────────────────────────
+      - name: Initialize Terraform
+        id: init
+        run: |
+          terraform init -backend-config="bucket=$TF_BACKEND_S3_BUCKET" -input=false
+
+        # ── Detect Drift ───────────────────────────────────────────────
+      - name: Detect Drift
+        id: drift
+        # Exit code 2 specifically indicates that drift exists.
+        # By capturing output to a file, you can parse the code
+        # for specific changes and affected resources.
+        run: |
+          set +e  # Continue on non-zero exit codes
+          terraform plan -var-file="dev-terraform.tfvars" \
+            -detailed-exitcode \
+            -no-color \
+            -input=false \
+            -out=tfplan \
+            > plan_output.txt 2>&1
+          
+          PLAN_EXIT_CODE=$?
+          echo "exitcode=$PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+          
+          if [ $PLAN_EXIT_CODE -eq 0 ]; then
+            echo "✅ No drift detected in DEV"
+            echo "drift_detected=false" >> $GITHUB_OUTPUT
+          elif [ $PLAN_EXIT_CODE -eq 2 ]; then
+            echo "⚠️ Drift detected in DEV"
+            echo "drift_detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Error running plan for DEV"
+            cat plan_output.txt
+            exit 1
+          fi
+
+        # ── Analyze Drift ───────────────────────────────────────────────
+        # Parsing plan output to get actionable information
+        # Deletions and replacements indicate more serious drift than updates,
+        # while security-related resources should probably get immediate attention.
+      - name: Analyze Drift
+        if: steps.plan.outputs.drift_detected == 'true'
+        id: analysis
+        run: |
+          # Count change types
+          CREATES=$(grep -c "will be created" plan_output.txt || echo "0")
+          UPDATES=$(grep -c "will be updated" plan_output.txt || echo "0")
+          DELETES=$(grep -c "will be destroyed" plan_output.txt || echo "0")
+          REPLACES=$(grep -c "must be replaced" plan_output.txt || echo "0")
+          
+          echo "creates=$CREATES" >> $GITHUB_OUTPUT
+          echo "updates=$UPDATES" >> $GITHUB_OUTPUT
+          echo "deletes=$DELETES" >> $GITHUB_OUTPUT
+          echo "replaces=$REPLACES" >> $GITHUB_OUTPUT
+          
+          # Extract changed resource addresses
+          grep -E "^ # (.+) (will be|must be)" plan_output.txt | \
+            sed 's/ # //' | \
+            cut -d' ' -f1 > changed_resources.txt
+          
+          # Flag security-sensitive resources
+          if grep -qE "aws_security_group|aws_iam|aws_s3_bucket_public" changed_resources.txt; then
+            echo "security_sensitive=true" >> $GITHUB_OUTPUT
+          else
+            echo "security_sensitive=false" >> $GITHUB_OUTPUT
+          fi
+
+        # ── Create Drift Issue ───────────────────────────────────────────────
+        # Using GitHub Issues for drift tracking
+        # The script prevents duplicate issues by checking for existing open drift reports.
+        # Additional drift adds comments to the existing issue rather than creating new ones.
+      - name: Create Drift Issue
+        if: steps.plan.outputs.drift_detected == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('plan_output.txt', 'utf8');
+            const environment = 'DEV';
+            
+            // Check for existing open drift issues
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: [`drift:${environment}`]
+            });
+            
+            const title = `Drift detected in ${environment} environment`;
+            const body = `
+            ## Drift Detection Report
+            **Environment:** ${environment}
+            **Detection Time:** ${new Date().toISOString()}
+            **Workflow Run:** [${context.runId}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+            
+            ### Summary
+            - Resources to create: ${{ steps.analysis.outputs.creates }}
+            - Resources to update: ${{ steps.analysis.outputs.updates }}
+            - Resources to delete: ${{ steps.analysis.outputs.deletes }}
+            - Resources to replace: ${{ steps.analysis.outputs.replaces }}
+            
+            ### Plan Output
+            \`\`\`
+            ${planOutput.substring(0, 50000)}
+            \`\`\`
+            `;
+            
+            if (issues.length > 0) {
+              // Add comment to existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues[0].number,
+                body: `New drift detected at ${new Date().toISOString()}\n\n${body}`
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: [`drift:${environment}`, 'infrastructure']
+              });
+            }
+
+        # ── Send Slack Alert ───────────────────────────────────────────────
+        # Slack notifications
+        # For immediate visibility, Slack notifications alert the team when drift occurs.
+        # Different severity levels help prioritize responses, with production environments
+        # and security-sensitive resources triggering urgent alerts
+      #- name: Send Slack Alert
+        #if: steps.plan.outputs.drift_detected == 'true'
+        # Production environments and security-sensitive changes trigger urgent
+        # notifications with different prefixes.
+        #run: |
+
+        # ── Upload Drift Artifacts ───────────────────────────────────────────────
+      - name: Upload Drift Artifacts
+        if: steps.plan.outputs.drift_detected == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-dev-${{ github.run_number }}
+          path: |
+            plan_output.txt
+            tfplan
+            changed_resources.txt
+          retention-days: 30
+
+        # ── Generate Summary ───────────────────────────────────────────────
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## Drift Detection Summary - DEV" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.plan.outputs.drift_detected }}" = "true" ]; then
+            echo "⚠️ **Drift Detected**" >> $GITHUB_STEP_SUMMARY
+            echo "- Creates: ${{ steps.analysis.outputs.creates }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Updates: ${{ steps.analysis.outputs.updates }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Deletes: ${{ steps.analysis.outputs.deletes }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No Drift Detected**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+        # ── Filter Expected Drift ───────────────────────────────────────────────
+      - name: Filter Expected Drift
+        if: steps.plan.outputs.drift_detected == 'true'
+        id: filter
+        run: |
+          # Define patterns for expected drift (customize for your infrastructure)
+          EXPECTED_PATTERNS="aws_autoscaling_group.*desired_capacity|aws_instance.*ami|random_password.*result"
+          
+          # Check if all changes match expected patterns
+          if grep -vE "$EXPECTED_PATTERNS" changed_resources.txt > /dev/null; then
+            echo "skip_notification=false" >> $GITHUB_OUTPUT
+          else
+            echo "skip_notification=true" >> $GITHUB_OUTPUT
+          fi
