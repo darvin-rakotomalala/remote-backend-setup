@@ -2,8 +2,8 @@ name: Backend Terraform CI/CD with OIDC
 
 # Event that triggers the workflow
 on:
-  push:
-    branches: [ main ]
+  #push:
+    #branches: [ main ]
     # paths:
     # - terraform/**
   pull_request:
