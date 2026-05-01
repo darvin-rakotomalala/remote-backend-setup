@@ -218,7 +218,7 @@ remote-backend-setup/
     - ```terraform-infracost.yml``` — Terraform workflow to estimate cloud infrastructure costs before deploying,
       enabling proactive cost management and budget control.
     - ```backend-deployment.yml``` — Terraform workflow to deploy Backend Remote Terraform State Management with OIDC.
-    - ```drift-detection.yml``` — Implement scheduled workflows that continuously monitor your infrastructure, catch
+    - ```drift-detection.yml``` — Implement scheduled workflows that continuously monitor our infrastructure, catch
       unauthorized changes early, and alert your team before drift causes problems.
 
 ### Why State Access Matters
