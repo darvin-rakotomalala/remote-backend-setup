@@ -11,7 +11,8 @@ terraform {
     encrypt    = true # Encrypt state at rest
     kms_key_id = "cd25fbac-3164-4aad-91a7-7cb1e95e3507"
     # State locking
-    dynamodb_table = "ce-dev-terraform-locks"
+    # dynamodb_table = "ce-dev-terraform-locks"
+    use_lockfile = true
     # Lock acquisition timeout
     # Default: 0 (wait indefinitely)
     # Recommended: 5-10 minutes
