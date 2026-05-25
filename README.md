@@ -155,10 +155,12 @@ remote-backend-setup/
    └── variables.tf                 # Input variables and defaults
    ├── .github/workflows/
       ├── drift-detection.yml       # drift detection workflows
-      ├── terraform-backend.yml     # backend workflows
+      ├── backend-deployment.yml    # backend workflows
       ├── terraform-checkov.yml     # checkov workflows
       ├── terraform-infracost.yml   # infracost workflows
-      └── terraform-security.yml    # security workflows
+      ├── terraform-tflint.yml      # infracost workflows
+      ├── terrascan.yml             # infracost workflows
+      └── tfsec-scanner.yml         # security workflows
 ```
 
 - **Step 2 - S3 bucket for state files**
