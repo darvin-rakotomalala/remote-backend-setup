@@ -1,4 +1,4 @@
-# Setting Up Remote Terraform Backend using Terraform
+# Setting up Remote Terraform Backend using Terraform
 
 > This project demonstrates how to design and implement a production-grade **Remote Terraform State Management** using Terraform, with security as a first-class concern for team collaboration, state locking, and disaster recovery.
 
@@ -230,7 +230,7 @@ By completing this project, you will learn:
 
 This diagram shows a secure, keyless CI/CD pipeline for deploying Terraform from GitHub Actions to AWS.
 
-![terraform-state.jpg](../terraform-state.jpg)
+![terraform-state.png](../terraform-state.png)
 
 ### Architecture Details
 
@@ -1035,12 +1035,12 @@ The following GitHub Actions workflows are included:
 
 | Workflow | Purpose |
 | --- | --- |
-| `terraform-checkov.yml` | Automated security scanning using Checkov to detect Terraform misconfigurations at repository and PR level |
-| `terraform-tflint.yml` | TFLint scans `.tf` files for stylistic errors, security problems, or provider-specific issues before deployment |
+| `checkov.yml` | Automated security scanning using Checkov to detect Terraform misconfigurations at repository and PR level |
+| `tflint.yml` | TFLint scans `.tf` files for stylistic errors, security problems, or provider-specific issues before deployment |
 | `terrascan.yml` | Scans Terraform code for security vulnerabilities |
 | `tfsec-scanner.yml` | Catches security misconfigurations before they reach your cloud infrastructure |
-| `terraform-infracost.yml` | Estimates cloud infrastructure costs before deploying for proactive cost management |
-| `backend-deployment.yml` | Deploys Backend Remote Terraform State Management with OIDC |
+| `infracost.yml` | Estimates cloud infrastructure costs before deploying for proactive cost management |
+| `backend.yml` | Deploys Backend Remote Terraform State Management with OIDC |
 | `drift-detection.yml` | Scheduled workflows that monitor infrastructure, catch unauthorized changes, and alert your team before drift causes problems |
 
 ---
