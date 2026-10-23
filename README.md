@@ -1,432 +1,392 @@
-## Setting up Remote Terraform Backend using Terraform
+# Remote Terraform Backend on AWS
 
-This repository contains Terraform configuration files to create a production-ready an AWS Remote Terraform State
-Management with security as a first-class concern for team collaboration, state locking, and disaster recovery.
+Production-ready Terraform remote state management on AWS, provisioned entirely with Terraform. It treats security as a
+first-class concern and provides team collaboration, state locking, auditing, and cross-region disaster recovery.
+Deployment is automated through GitHub Actions using keyless OIDC authentication.
 
-**Terraform state** is the source of truth for your infrastructure. By default, it lives in a local
-```terraform.tfstate``` file, which works for learning but fails for teams. Remote state solves collaboration, security,
-and reliability problems.
+## Overview
 
-### Business Problem
+**Terraform state** is the source of truth for your infrastructure. By default it lives in a local `terraform.tfstate`
+file, which is fine for learning but fails for teams. This project replaces it with a hardened remote backend.
 
-***
+### Why local state fails
 
-In modern infrastructure management, relying on local Terraform state files (terraform.tfstate) creates severe
-operational risks and organizational bottlenecks:
+| Risk              | Local state                                                                                                         | Remote state (this project)                                                           |
+|-------------------|---------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| **Security**      | State holds secrets (credentials, keys, connection strings) in plaintext and is easily committed to Git by accident | KMS encryption at rest, HTTPS-only access, public access blocked, least-privilege IAM |
+| **Collaboration** | No single source of truth; engineers overwrite each other's changes                                                 | One shared state in S3                                                                |
+| **Concurrency**   | Concurrent applies corrupt state                                                                                    | DynamoDB state locking                                                                |
+| **Resilience**    | A laptop crash or corrupted file orphans deployed resources; no protection against regional outages                 | S3 versioning, cross-region replication, DynamoDB Global Tables                       |
+| **Compliance**    | No audit trail of who changed what, and when                                                                        | CloudTrail + CloudWatch audit logging and alarms                                      |
 
-- **Security & Compliance Vulnerabilities**: Terraform state files store sensitive infrastructure metadata, including
-  database credentials, API keys, private keys, and connection strings in plain text. Managing these files locally often
-  leads to improper handling—such as accidental commits to public or private Git repositories—exposing critical
-  infrastructure to security breaches.
-- **Team Collaboration Bottlenecks**: Local state files prevent multi-engineer collaboration because there is no
-  centralized, single source of truth. Team members risk working on out-of-date state configurations, leading to
-  conflicting changes, resource mismatches, and constant overwrite cycles.
-- **Operational Downtime & Disaster Recovery Risks**: Local environments lack built-in high availability, backups, and
-  redundancy. If a developer’s local machine crashes or a state file gets corrupted, the mapping to deployed cloud
-  resources is lost, resulting in unmanaged "orphaned" resources, painful manual cleanups, and high outage risks during
-  regional cloud failures.
-- **Compliance & Audit Deficits**: In regulated industries, organizations must maintain an explicit audit trail showing
-  who modified infrastructure, when, and how. Local state execution offers zero centralized auditing or real-time
-  visibility into infrastructure modifications.
+### Design goals
 
-### Technical Challenge
+- **State locking:** a distributed lock (DynamoDB) blocks simultaneous runs from team members and CI/CD pipelines.
+- **Zero-trust CI/CD:** no long-lived AWS keys; GitHub Actions authenticates with OpenID Connect (OIDC) and short-lived
+  JWTs.
+- **Defense in depth:** customer-managed KMS encryption at rest, HTTPS enforced in transit, all public S3 access
+  blocked, strict IAM policies.
+- **Multi-region resilience:** S3 cross-region replication (CRR) and DynamoDB Global Tables between `us-east-1`
+  (primary) and `us-west-2` (secondary) for failover without state loss or locking failures.
+- **Observability:** CloudTrail captures S3 and DynamoDB data events, streams them to CloudWatch Logs, and CloudWatch
+  alarms flag stale backups, long-held locks, and unauthorized access.
 
-***
+### Learning objectives
 
-Designing and implementing an enterprise-grade, production-ready remote state backend requires solving several complex
-infrastructure and security requirements:
+- Local vs. remote state management
+- Creating and configuring the backend infrastructure
+- State locking with DynamoDB
+- Securing, monitoring, and auditing state
+- Automated backup and recovery strategy
+- Migrating from local to remote state
 
-- **State Concurrency & Locking**: Orchestrating concurrent execution across multiple team members and CI/CD pipelines
-  requires a distributed state-locking mechanism (via DynamoDB) to block simultaneous execution and prevent state
-  corruption.
-- **Zero-Trust CI/CD Authentication**: Eliminating long-lived, static AWS credentials in CI/CD pipelines (such as GitHub
-  Actions) by implementing keyless authentication using OpenID Connect (OIDC) with short-lived JSON Web Tokens (JWT).
-- **Defense-in-Depth Security**: Enforcing mandatory customer-managed KMS encryption at rest, enforcing HTTPS transit
-  encryption, blocking all public S3 access, and applying strict IAM least-privilege policies to restrict state
-  read/write access.
-- **Multi-Region Resiliency & Disaster Recovery**: Provisioning multi-region cross-region replication (CRR) for state
-  files in S3 and utilizing DynamoDB Global Tables across primary (```us-east-1```) and secondary (```us-west-2```)
-  regions to ensure seamless failover without state loss or locking failures.
-- **Real-time Auditing & Automated Monitoring**: Setting up end-to-end observational tracking by capturing S3 and
-  DynamoDB data events via AWS CloudTrail, streaming logs into CloudWatch Log Groups, and configuring metric alarms for
-  stale backups, long-held state locks, and unauthorized access attempts.
+## Architecture
 
-### Learning Objectives
+![Remote Terraform backend architecture](terraform-state.png)
 
-***
+### Components
 
-By completing this project, you will learn:
+| Component                           | Role                                                                                                            |
+|-------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| **GitHub / GitHub Actions**         | Hosts the Terraform code and triggers deployments.                                                              |
+| **GitHub OIDC identity provider**   | Lets GitHub Actions authenticate to AWS with a short-lived JWT instead of static credentials stored as secrets. |
+| **S3 state bucket** (`us-east-1`)   | Stores `terraform.tfstate` with versioning, giving shared access and state history.                             |
+| **S3 replica bucket** (`us-west-2`) | Receives cross-region replication of the state bucket. The IAM replication role is assumed by the S3 service.   |
+| **DynamoDB lock table**             | Prevents two Terraform runs from modifying state simultaneously. Replicated to `us-west-2` as a Global Table.   |
+| **KMS keys** (one per region)       | Encrypt the S3 buckets and DynamoDB tables.                                                                     |
+| **CloudTrail / CloudWatch**         | Audit logging and alarms.                                                                                       |
+| **SNS**                             | Notification channel for alerts and S3 events.                                                                  |
 
-- Understanding Managing Terraform State file - Local vs Remote
-- Configuring Backend resource creation
-- Creating state infrastructure
-- State Locking with DynamoDB
-- Monitor S3 bucket of Terraform State File and Lock Table
-- Deploy State infrastructure
-- Securely Manage Terraform State files
-- Audit Terraform State changes
-- State File Backup and Recovery - Automated Backup Strategy
-- Migrating from Local to Remote State
+### Deployment flow
 
-### Why Remote State Matters
+1. A push or pull request triggers a GitHub Actions workflow.
+2. The runner requests an OIDC token from GitHub.
+3. AWS validates the token against the registered GitHub identity provider.
+4. The runner assumes an IAM role; no static credentials are involved.
+5. Terraform reads and writes state in the S3 backend.
+6. DynamoDB locks the state for the duration of the operation.
 
-***
+### Why this pattern
 
-Local state has serious limitations:
+This is the recommended approach for running Terraform in a team/CI environment on AWS:
 
-- **No collaboration**: Team members overwrite each other's changes
-- **No locking**: Concurrent applies corrupt state
-- **No backup**: Laptop crashes lose infrastructure mapping
-- **No security**: State contains sensitive values in plaintext
+- **No static credentials:** OIDC tokens are short-lived and scoped.
+- **Shared state:** S3 enables team collaboration.
+- **Safe concurrency:** DynamoDB locking prevents corruption.
+- **Auditability:** S3 versioning and CloudTrail preserve history.
 
-Remote state provides:
+## Prerequisites
 
-- **Shared access**: Teams work from the same state
-- **Locking**: Prevent concurrent modifications
-- **Versioning**: Roll back to previous states
-- **Encryption**: Protect sensitive data at rest
+**Tooling**
 
-### Architecture Overview
+- AWS account and AWS CLI, installed and configured
+- Terraform >= 1.0
 
-***
+**GitHub / AWS integration**
 
-![terraform-state.png](terraform-state.png)
+1. Create an OpenID Connect identity provider in IAM with a trust relationship to this GitHub repository.
+2. Store the ARN of the resulting IAM role as a GitHub secret named `AWS_ROLE_ARN` (referenced by the workflow files).
 
-#### Architecture Details
+**AWS permissions** required by the deploying user/role:
 
-***
+| Service                            | Access                       |
+|------------------------------------|------------------------------|
+| S3, DynamoDB, KMS, SNS, CloudTrail | Full access                  |
+| CloudWatch                         | Dashboard and metrics access |
 
-- **GitHub (left)** The source of truth — your Terraform code lives here, and GitHub Actions triggers deployments.
-- **GitHub Identity Provider (OIDC)** Instead of storing long-lived AWS credentials as GitHub secrets, GitHub
-  authenticates to AWS using OpenID Connect (OIDC). GitHub presents a short-lived JWT token, and AWS validates it via
-  the registered identity provider. No static keys needed.
-- **S3 Bucket (green bucket icon)** Stores the Terraform state file (terraform.tfstate) remotely. This allows:
-    - Team collaboration (shared state)
-    - State locking coordination
-    - History/versioning of infrastructure changes
-- **DynamoDB Table (purple icon)** Handles state locking — prevents two Terraform runs from modifying state
-  simultaneously, avoiding corruption.
-
-#### Flow
-
-- A push/PR triggers a GitHub Actions workflow
-- The runner requests an OIDC token from GitHub
-- AWS validates the token against the registered GitHub identity provider
-- The runner assumes an IAM role (no static credentials!)
-- Terraform accesses the S3 backend to read/write state
-- DynamoDB locks the state during the operation
-
-#### Why this pattern?
-
-- No static credentials — OIDC tokens are short-lived and scoped
-- Shared state — S3 enables team collaboration
-- Safe concurrency — DynamoDB prevents state corruption
-- Auditability — S3 versioning keeps state history This is considered the **best practice** for managing Terraform in a
-  team/CI environment on AWS.
-
-### Prerequisites
-
-***
-
-Before starting, ensure you have the following installed:
-
-- AWS account with necessary permissions
-- AWS CLI Installed and Configured with appropriate credentials
-- Terraform >= 1.0 installed
-- Create an OpenID Connect identity provider in Amazon IAM that has a trust relationship with this GitHub repository.
-- Store the ```ARN``` of the ```IAM Role``` as a GitHub secret named ```AWS_ROLE_ARN``` which is referenced in the
-  workflow files.
-
-### Required AWS Permissions
-
-***
-
-Your AWS user/role needs permissions for:
-
-- S3 (full access)
-- DynamoDB (full access)
-- KMS (full access)
-- SNS (full access)
-- CloudTrail (full access)
-- CloudWatch (dashboard and metrics access)
-
-### Implementation
-
-***
-
-- **Step 1: Project Structure**
+## Project Structure
 
 ```
 remote-backend-setup/
-└── modules/
-    └── cloudtrail/                 # This module sets up an audit logging infrastructure
-        ├── main.tf
-        ├── outputs.tf
-        └── variables.tf
-    └── cloudwatch/                 # This module sets up a comprehensive monitoring and alerting system
-        ├── main.tf
-        ├── outputs.tf
-        └── variables.tf
-    └── dynamodb/                   # This module creates a DynamoDB table used to prevent concurrent Terraform runs from corrupting shared state.
-        ├── main.tf
-        ├── outputs.tf
-        └── variables.tf
-    └── iam/
-        ├── bucket_policy.tf       # This code creates an S3 bucket policy for storing Terraform state files securely.
-        ├── github_actions.tf      # This code sets up GitHub Actions CI/CD integration with AWS using OIDC (OpenID Connect)    
-        ├── iam_cloudtrail.tf      # This code sets up AWS CloudTrail audit logging with proper IAM permissions and S3 storage
-        ├── iam_replication.tf     # This code creates the IAM permissions needed for AWS S3 to automatically replicate objects from one bucket to another
-        ├── outputs.tf          
-        └── variables.tf         
-    └── kms/                        # This module creates AWS KMS (Key Management Service) keys
-        ├── main.tf
-        ├── outputs.tf
-        └── variables.tf
-    └── s3/                         # This module sets up a secure S3-based backend for storing Terraform state files
-        ├── outputs.tf
-        ├── replication.tf
-        ├── s3-state-file.tf
-        └── variables.tf
-    └── sns/                        # This module sets up an SNS (Simple Notification Service) notification system
-        ├── main.tf
-        ├── outputs.tf
-        └── variables.tf
-   ├── backend.tf                   # Backend configuration
-   ├── data.tf                      # Data sources
-   ├── locals.tf                    # locals for common_tags
-   ├── main.tf                      # Main infrastructure resources
-   ├── outputs.tf                   # Output values
-   ├── dev-terraform.tfvars         # The terraform.tfvars file for dev
-   ├── staging-terraform.tfvars     # The terraform.tfvars file for staging
-   ├── prod-terraform.tfvars        # The terraform.tfvars file for prod
-   ├── providers.tf                 # Terraform and AWS provider configuration
-   └── variables.tf                 # Input variables and defaults
-   ├── .github/workflows/
-      ├── drift-detection.yml       # drift detection workflows
-      ├── backend-deployment.yml    # backend workflows
-      ├── terraform-checkov.yml     # checkov workflows
-      ├── terraform-infracost.yml   # infracost workflows
-      ├── terraform-tflint.yml      # infracost workflows
-      ├── terrascan.yml             # infracost workflows
-      └── tfsec-scanner.yml         # security workflows
+├── modules/
+│   ├── cloudtrail/              # Audit logging infrastructure
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── cloudwatch/              # Monitoring and alerting
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── dynamodb/                # State-locking table (prevents concurrent runs)
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── iam/
+│   │   ├── bucket_policy.tf     # Secure S3 bucket policy for state files
+│   │   ├── github_actions.tf    # GitHub Actions <-> AWS integration via OIDC
+│   │   ├── iam_cloudtrail.tf    # CloudTrail permissions and S3 log storage
+│   │   ├── iam_replication.tf   # Permissions for S3 cross-region replication
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── kms/                     # KMS encryption keys
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── s3/                      # Secure S3 backend for state files
+│   │   ├── outputs.tf
+│   │   ├── replication.tf
+│   │   ├── s3-state-file.tf
+│   │   └── variables.tf
+│   └── sns/                     # Notification system
+│       ├── main.tf
+│       ├── outputs.tf
+│       └── variables.tf
+├── .github/workflows/
+│   ├── backend-deployment.yml   # Deploys the backend (OIDC)
+│   ├── drift-detection.yml      # Scheduled drift detection
+│   ├── terraform-checkov.yml    # Checkov security scan
+│   ├── terraform-infracost.yml  # Cost estimation
+│   ├── terraform-tflint.yml     # TFLint linting
+│   ├── terrascan.yml            # Terrascan security scan
+│   └── tfsec-scanner.yml        # tfsec security scan
+├── backend.tf                   # Backend configuration
+├── data.tf                      # Data sources
+├── locals.tf                    # Common tags
+├── main.tf                      # Main infrastructure resources
+├── outputs.tf                   # Output values
+├── providers.tf                 # Terraform and AWS provider configuration
+├── variables.tf                 # Input variables and defaults
+├── dev-terraform.tfvars         # Dev environment values
+├── staging-terraform.tfvars     # Staging environment values
+└── prod-terraform.tfvars        # Prod environment values
 ```
 
-- **Step 2 - S3 bucket for state files**
-    - Prevent accidental deletion
-    - Enable versioning to keep state history
-    - Enable encryption
-    - Block all public access (CRITICAL SECURITY)
-    - Enable access logging on the state bucket
-    - S3 bucket lifecycle Policy for Cost Optimization
-    - S3 Event to SNS Notifications for ObjectCreated and ObjectRemoved
-    - S3 Replication (for disaster recovery)
-    - Cross-region state backup replication
-    - Replicate encrypted objects
+## What Gets Deployed
 
-- **Step 3 - DynamoDB table for state locking**
-    - Enable encryption
-    - Prevent accidental deletion
-    - Enable global table replication to the DR region
+### S3 state bucket
 
-- **Step 4 - Security**
-    - IAM Policies for State Access
-    - KMS key for state encryption
-    - Bucket Policy for Defense in Depth: enforce encryption in transit
+- Deletion protection against accidental removal
+- Versioning to keep state history
+- KMS encryption
+- All public access blocked (**critical**)
+- Access logging
+- Lifecycle policy for cost optimization
+- Event notifications to SNS (`ObjectCreated`, `ObjectRemoved`)
+- Cross-region replication of encrypted objects for disaster recovery
 
-- **Step 5 - SNS Topic for notifications/alerts on Terraform State**
+### DynamoDB lock table
 
-- **Step 6 - CloudTrail for API-Level Auditing**
-    - S3 bucket for audit logs with its own retention policy
-    - Create a CloudTrail trail specifically for Terraform state auditing
-    - Capture data events for the state bucket
-    - Capture DynamoDB events for lock operations
-    - Centralize Audit Logs: send CloudTrail events to CloudWatch Logs for centralized querying
+- Encryption at rest
+- Deletion protection
+- Global Table replication to the DR region
 
-- **Step 7 - CloudWatch Log group for Terraform state**<br>
-  Set Up CloudWatch alert on Terraform state
-    - Alert when Terraform locks are held too long
-    - Alert when unusual Terraform state access detected
-    - Alert when Terraform state is modified
-    - Alert on state file access
-    - Alert when more than 5 access over 5 minutes period
-    - Alert when state backups are stale
-    - Alarm when replication is failing
-    - Alert when Terraform state replication is lagging
-    - Multiple failed OIDC authentication attempts detected
-    - Security Alerts
+### Security
 
-- **Step 8 - Configure the Backend (*backend.tf*)**
+- IAM policies restricting state read/write access
+- KMS keys for state encryption
+- Bucket policy enforcing encryption in transit (HTTPS only)
 
-- **Step 9 - Deployment Workflow**
-    - ```checkov.yml``` — Automated security scanning framework using Checkov to detect Terraform misconfigurations at
-      both repository and pull request (PR) levels.
-    - ```tflint.yml``` — TFLint automatically scans ```.tf``` files and reports potential issues. It works by analyzing
-      Terraform code for stylistic errors, security problems, or provider-specific issues before deployment.
-    - ```terrascan.yml``` — To scan Terraform code for security vulnerabilities.
-    - ```tfsec-scanner.yml``` — Terraform workflow to catch security misconfigurations before they reach your cloud
-      infrastructure.
-    - ```infracost.yml``` — Terraform workflow to estimate cloud infrastructure costs before deploying, enabling
-      proactive cost management and budget control.
-    - ```backend.yml``` — Terraform workflow to deploy Backend Remote Terraform State Management with OIDC.
-    - ```drift-detection.yml``` — Implement scheduled workflows that continuously monitor our infrastructure, catch
-      unauthorized changes early, and alert your team before drift causes problems.
+### Notifications and auditing
 
-### Why State Access Matters
+- **SNS topic** for Terraform state notifications and alerts
+- **CloudTrail** trail dedicated to Terraform state, with:
+    - a separate S3 log bucket with its own retention policy
+    - data events for the state bucket and DynamoDB lock operations
+    - delivery to CloudWatch Logs for centralized querying
+- **CloudWatch** log group and alarms (see [Auditing and Monitoring](#auditing-and-monitoring))
 
-***
+## Deployment
 
-The state file contains things you would not want exposed:
+1. Complete the [prerequisites](#prerequisites).
+2. Review the `*-terraform.tfvars` file for your target environment.
+3. Deploy, either through the `backend-deployment.yml` workflow or manually:
 
-- Resource IDs and ARNs that map your infrastructure
-- Database passwords and connection strings
-- Private keys generated by the tls_private_key resource
-- API keys passed to resources via variables
-- Output values, including any marked as sensitive
+   ```bash
+   terraform init
+   terraform plan  -var-file="dev-terraform.tfvars"
+   terraform apply -var-file="dev-terraform.tfvars"
+   ```
 
-### Why State Backups Matter
-
-***
-
-Without disaster recovery for Terraform state:
-
-- Terraform cannot determine what needs to be created, updated, or destroyed.
-- Running ```terraform plan``` will show every resource as "new."
-- Manual cleanup of orphaned resources becomes necessary.
-- Sensitive outputs and resource attributes are lost.
-- A regional cloud outage makes your state inaccessible. You cannot run ```terraform plan``` or ```terraform apply```.
-- Accidental deletion of the state file orphans all managed resources.
-- State corruption from a failed migration or race condition blocks all operations.
-- A compromised storage account could lead to state tampering.
-
-### Audit Terraform State Changes
-
-***
-
-When something goes wrong with your infrastructure, one of the first questions is "what changed?" Auditing Terraform
-state changes gives you a clear trail of who modified what and when. This is critical for compliance in regulated
-industries, useful for debugging production issues, and important for security monitoring.
-
-**What to Audit**
-
-- **Who** made the change (user identity, CI/CD pipeline, service account).
-- **When** the change happened (timestamp).
-- **What** changed (which resources were added, modified, or removed).
-- **How** the change was made (manual apply, CI/CD pipeline, state push).
-- **Why** the change was made (linked to a PR, ticket, or change request).
-
-### Best Practices
-
-***
-
-- **Enable encryption**: Always encrypt state at rest
-- **Use IAM policies**: Restrict who can read/write state
-- **Enable versioning on your backend bucket**. This is the bare minimum for any production setup. Versioning is the
-  first line of defense against accidental deletion and corruption.
-- **Block public access**: Never expose state publicly
-- **Set up cross-region replication** for critical infrastructure state. Keep a copy of state in a different geographic
-  region.
-- **Monitor state file**: Enable CloudWatch Metric alarm and alerting
-- **Audit access**: Enable CloudTrail logging for S3
-- **Test your restore process** periodically. A backup you have never tested is a backup you cannot trust.
-- **Monitor backup freshness** to catch failures early.
-- **Keep backups for at least 30 days**. Some issues take time to surface.
-- **Never store backups in the same location as the primary state**. A single point of failure defeats the purpose.
-- **Replicate lock tables too**. Use DynamoDB global tables or equivalent so locking works during failover.
-- **Test failover regularly**. Run DR drills weekly or monthly to verify your recovery procedure works.
-- **Document the failover procedure** and store it somewhere accessible during an outage (not just in your primary
-  region).
-- **Monitor replication lag**. Stale replicas mean data loss during failover.
-- **Keep backend configs for both regions** ready to go so failover is a single command.
-
-### Migrating from Local to Remote State
-
-***
-
-- Initialize and deploy: First, create the state backend infrastructure and run it
-
-```
-$ terraform init
-$ terraform plan
-$ terraform apply
-```
-
-- Save outputs for later use
-
-```
-$ terraform output -json > backend-config.json
-$ terraform output backend_config > backend-template.tf
-```
-
-- Backup this local state file
-
-```
-$ cp terraform.tfstate terraform.tfstate.backup
-$ aws s3 cp terraform.tfstate s3://mycompany-terraform-state/bootstrap/terraform.tfstate
-```
-
-- Add or activate backend configuration (backend.tf)
-- Reinitialize to migrate state: ```terraform init -migrate-state```
-- Verify migration: ```terraform state list```
-- Verify backend configuration: ```terraform show```
-- Verify in S3: ```aws s3 ls s3://ce-dev-terraform-state-5bhkr8k3/dev/infrastructure/``` should show terraform.tfstate
-- Remove local state (after verification!): ```rm terraform.tfstate terraform.tfstate.backup```
-- Test that remote state works: ```terraform plan```should work normally, pulling from S3
-
-### State Management Commands
-
-***
-
-- List all resources in state: ```terraform state list```
-- Show details of a specific resource: ```terraform state show aws_instance.web```
-- Pull remote state to local file for inspection: ```terraform state pull > state.json```
-- Rename a resource in state: ```terraform state mv aws_instance.old aws_instance.new```
-- Remove without destroying (resource still exists in cloud): ```terraform state rm aws_instance.web```
+4. Configure the remote backend in `backend.tf` and [migrate the state](#migrating-from-local-to-remote-state).
 
 ### Outputs
 
-***
-After successful deployment, the following outputs will be available:
+| Output                         | Description                                      |
+|--------------------------------|--------------------------------------------------|
+| `terraform_execution_role_arn` | Terraform execution role ARN for GitHub Actions  |
+| `backend_config`               | Backend configuration to reuse in other projects |
 
-- ```terraform_execution_role_arn``` - Terraform execution role ARN for GitHub Actions
-- ```backend_config``` - Backend configuration to use in other projects
+## CI/CD Workflows
 
-### Verification
+| Workflow                  | Purpose                                                                             |
+|---------------------------|-------------------------------------------------------------------------------------|
+| `backend-deployment.yml`  | Deploys the remote state backend using OIDC.                                        |
+| `terraform-checkov.yml`   | Checkov scans for Terraform misconfigurations at repository and PR level.           |
+| `tfsec-scanner.yml`       | tfsec catches security misconfigurations before they reach AWS.                     |
+| `terrascan.yml`           | Terrascan scans for security vulnerabilities.                                       |
+| `terraform-tflint.yml`    | TFLint reports stylistic, security, and provider-specific issues before deployment. |
+| `terraform-infracost.yml` | Estimates infrastructure cost before deploying.                                     |
+| `drift-detection.yml`     | Scheduled run that detects unauthorized changes early and alerts the team.          |
 
-***
+## Migrating from Local to Remote State
 
-After successful deployment, you can check your State File via AWS Management Console. In this project, **Verification**
-directory contains ours resources created.
+1. **Create the backend infrastructure**
 
-- **0-backend output.png** — Backend configuration to use in other projects and Terraform execution role ARN for GitHub
-  Actions.
-- **1-terraform init -migrate-state.png** — Reinitialization to migrate state
-- **2-1-terraform-state migrated.png** — Terraform state migrate
-- **2-s3 bucket.png** — List buckets created
-- **3-s3 tf state.png** — S3 Bucket properties of Terraform state
-- **4-s3 tf state replica.png** — S3 Bucket properties of Terraform state replicate
-- **5-terraform-state-data-replica.png** — Terraform state replicate in us-west-2
-- **6-dynamodb table us-east-1.png** — DynamoDB table in primary region
-- **7-table: ce-dev-terraform-locks - Items returned.png** — Table items
-- **8-dynamodb table in us-west-2.png** — DynamoDB table in secondary region
-- **9-dynamodb Global tables.png** — DynamoDB Global tables replicas
-- **10-KMS key.png** — KMS key in primary region
-- **11-KMS key replica.png** — KMS key in secondary region
-- **12-KMS key rotation.png** — KMS key rotation period
-- **13-sns topic.png** — SNS Topic created
-- **14-sns all subscription.png** — SNS Subscription created
-- **15-s3-cloudtrail.png** — S3 CloudTrail for Terraform state file
-- **16-cloudtrail.png** — CloudTrail for Terraform state file
-- **17-cloudwatch log groups.png** — CloudWatch Log groups for CloudTrail log
-- **18-Log groups ce-dev-terraform-state-file-trail.png** — Log group details of CloudTrail log
-- **19-cloudwatch Alarms.png** — List of alarms created
+   ```bash
+   terraform init
+   terraform plan
+   terraform apply
+   ```
 
-### Cleanup
+2. **Save the outputs**
 
-***
+   ```bash
+   terraform output -json > backend-config.json
+   terraform output backend_config > backend-template.tf
+   ```
 
-To delete all resources created, run ```$ terraform destroy -var-file="dev-terraform.tfvars" -auto-approve```. This will
-delete all resources we have created.
+3. **Back up the local state**
 
-**Important**: Always review and test this configuration in a non-production environment before deploying to production.
-Customize S3, DynamoDB Table, replication, and other configuration settings according to your organization's
-requirements.
+   ```bash
+   cp terraform.tfstate terraform.tfstate.backup
+   aws s3 cp terraform.tfstate s3://<state-bucket>/bootstrap/terraform.tfstate
+   ```
+
+4. **Activate the backend configuration** in `backend.tf`.
+5. **Migrate the state**
+
+   ```bash
+   terraform init -migrate-state
+   ```
+
+6. **Verify**
+
+   ```bash
+   terraform state list        # resources are present
+   terraform show              # backend is configured
+   aws s3 ls s3://<state-bucket>/<env>/infrastructure/   # terraform.tfstate exists
+   terraform plan              # runs normally, pulling state from S3
+   ```
+
+7. **Remove local state** (only after verification):
+
+   ```bash
+   rm terraform.tfstate terraform.tfstate.backup
+   ```
+
+## Operations
+
+### State management commands
+
+| Task                                 | Command                                                |
+|--------------------------------------|--------------------------------------------------------|
+| List all resources in state          | `terraform state list`                                 |
+| Show a specific resource             | `terraform state show aws_instance.web`                |
+| Pull remote state for inspection     | `terraform state pull > state.json`                    |
+| Rename a resource in state           | `terraform state mv aws_instance.old aws_instance.new` |
+| Remove from state without destroying | `terraform state rm aws_instance.web`                  |
+
+### Why state access must be restricted
+
+State files contain data you do not want exposed:
+
+- Resource IDs and ARNs that map your infrastructure
+- Database passwords and connection strings
+- Private keys (e.g. from `tls_private_key`)
+- API keys passed in through variables
+- Output values, including those marked sensitive
+
+## Auditing and Monitoring
+
+When something goes wrong, the first question is "what changed?" An audit trail is critical for compliance, production
+debugging, and security monitoring. Every state change should answer:
+
+| Question | Examples                                       |
+|----------|------------------------------------------------|
+| **Who**  | User identity, CI/CD pipeline, service account |
+| **When** | Timestamp                                      |
+| **What** | Resources added, modified, or removed          |
+| **How**  | Manual apply, CI/CD pipeline, state push       |
+| **Why**  | Linked PR, ticket, or change request           |
+
+### CloudWatch alarms
+
+- Terraform state locks held too long
+- Unusual or unauthorized state access (including more than 5 accesses within 5 minutes)
+- State file modified or accessed
+- State backups stale
+- Replication failing or lagging
+- Multiple failed OIDC authentication attempts
+
+## Disaster Recovery
+
+Without a recovery strategy for state:
+
+- Terraform cannot tell what to create, update, or destroy; `terraform plan` shows every resource as new.
+- Orphaned resources require manual cleanup, and sensitive outputs and attributes are lost.
+- A regional outage makes state inaccessible, blocking `plan` and `apply`.
+- Accidental deletion, or corruption from a failed migration or race condition, blocks all operations.
+- A compromised storage account could allow state tampering.
+
+Mitigations are listed under [Best Practices](#best-practices).
+
+## Best Practices
+
+**Security**
+
+- Encrypt state at rest with KMS.
+- Restrict read/write access with IAM policies.
+- Block all public access; never expose state publicly.
+- Enable CloudTrail logging for S3 and DynamoDB.
+
+**Durability and backup**
+
+- Enable versioning on the backend bucket. This is the bare minimum for production and the first defense against
+  deletion and corruption.
+- Keep backups for at least 30 days; some issues take time to surface.
+- Never store backups in the same location as the primary state.
+- Test your restore process periodically. An untested backup cannot be trusted.
+
+**Disaster recovery**
+
+- Set up cross-region replication for critical state.
+- Replicate lock tables too (DynamoDB Global Tables) so locking works during failover.
+- Keep backend configs for both regions ready so failover is a single command.
+- Run failover drills weekly or monthly.
+- Document the failover procedure and store it somewhere reachable during an outage (not only in the primary region).
+
+**Monitoring**
+
+- Alarm on the state file and lock table with CloudWatch.
+- Monitor backup freshness and replication lag; stale replicas mean data loss during failover.
+
+## Verification
+
+After deployment, confirm the resources in the AWS Management Console. Reference screenshots are in the `Verification/`
+directory.
+
+| Area       | Screenshot                                             | Shows                                 |
+|------------|--------------------------------------------------------|---------------------------------------|
+| Backend    | `0-backend output.png`                                 | Backend config and execution role ARN |
+| Migration  | `1-terraform init -migrate-state.png`                  | State migration re-initialization     |
+|            | `2-1-terraform-state migrated.png`                     | State migrated                        |
+| S3         | `2-s3 bucket.png`                                      | Buckets created                       |
+|            | `3-s3 tf state.png`                                    | State bucket properties               |
+|            | `4-s3 tf state replica.png`                            | Replica bucket properties             |
+|            | `5-terraform-state-data-replica.png`                   | State replicated in `us-west-2`       |
+| DynamoDB   | `6-dynamodb table us-east-1.png`                       | Primary-region table                  |
+|            | `7-table: ce-dev-terraform-locks - Items returned.png` | Lock table items                      |
+|            | `8-dynamodb table in us-west-2.png`                    | Secondary-region table                |
+|            | `9-dynamodb Global tables.png`                         | Global table replicas                 |
+| KMS        | `10-KMS key.png`                                       | Primary-region key                    |
+|            | `11-KMS key replica.png`                               | Secondary-region key                  |
+|            | `12-KMS key rotation.png`                              | Key rotation period                   |
+| SNS        | `13-sns topic.png`                                     | Topic created                         |
+|            | `14-sns all subscription.png`                          | Subscriptions created                 |
+| CloudTrail | `15-s3-cloudtrail.png`                                 | CloudTrail log bucket                 |
+|            | `16-cloudtrail.png`                                    | Trail for the state file              |
+| CloudWatch | `17-cloudwatch log groups.png`                         | Log groups for CloudTrail             |
+|            | `18-Log groups ce-dev-terraform-state-file-trail.png`  | Log group details                     |
+|            | `19-cloudwatch Alarms.png`                             | Alarms created                        |
+
+## Cleanup
+
+To delete everything created by this project:
+
+```bash
+terraform destroy -var-file="dev-terraform.tfvars" -auto-approve
+```
+
+> **Important:** Review and test this configuration in a non-production environment first, and customize S3, DynamoDB,
+> replication, and other settings to your organization's requirements. Destroying the backend deletes the state it
+> protects, so migrate state elsewhere first if you still need it.
